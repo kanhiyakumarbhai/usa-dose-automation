@@ -25,14 +25,14 @@ if not text:
     print("ERROR: daily_script.txt is empty")
     sys.exit(1)
 
-# Keep narration suitable for approximately 30–40 seconds
+# Keep the narration suitable for a 30–40 second Short.
 words = text.split()
 
 if len(words) > 100:
     text = " ".join(words[:100])
 
 print("================================")
-print("Finding Free Female US Voice")
+print("Finding Free Male US Voice")
 print("================================")
 
 headers = {
@@ -52,7 +52,8 @@ except Exception as e:
     sys.exit(1)
 
 if response.status_code != 200:
-    print("Voice list ERROR:", response.status_code)
+    print("ELEVENLABS VOICE LIST ERROR")
+    print("Status:", response.status_code)
     print(response.text)
     sys.exit(1)
 
@@ -60,7 +61,8 @@ voices = response.json().get("voices", [])
 
 selected_voice = None
 
-# Find a female American voice that is allowed for the current account.
+# First preference:
+# Free/API-allowed American male voice.
 for voice in voices:
     labels = voice.get("labels") or {}
 
@@ -69,7 +71,7 @@ for voice in voices:
     free_allowed = voice.get("free_users_allowed")
 
     if (
-        gender == "female"
+        gender == "male"
         and (
             "american" in accent
             or "usa" in accent
@@ -80,7 +82,8 @@ for voice in voices:
         selected_voice = voice
         break
 
-# If no female American voice is available, find any free female voice.
+# Second preference:
+# Any Free/API-allowed male voice.
 if selected_voice is None:
     for voice in voices:
         labels = voice.get("labels") or {}
@@ -88,20 +91,19 @@ if selected_voice is None:
         gender = str(labels.get("gender", "")).lower()
         free_allowed = voice.get("free_users_allowed")
 
-        if gender == "female" and free_allowed is True:
+        if gender == "male" and free_allowed is True:
             selected_voice = voice
             break
 
 if selected_voice is None:
     print("================================")
-    print("NO FREE FEMALE API VOICE FOUND")
+    print("NO FREE MALE API VOICE FOUND")
     print("================================")
     print()
-    print("Your current ElevenLabs account does not")
-    print("provide a Free female voice through the API.")
+    print("Your ElevenLabs account does not provide")
+    print("a Free male voice through the API.")
     print()
-    print("The workflow cannot continue with ElevenLabs")
-    print("until an API-allowed voice is available.")
+    print("Please check the ElevenLabs API voice access.")
     sys.exit(1)
 
 voice_id = selected_voice.get("voice_id")
@@ -109,7 +111,10 @@ voice_name = selected_voice.get("name")
 
 print("Selected voice:", voice_name)
 print("Voice ID:", voice_id)
-print("Generating natural voice...")
+print("Accent:", (selected_voice.get("labels") or {}).get("accent"))
+print("Gender:", (selected_voice.get("labels") or {}).get("gender"))
+print()
+print("Generating ElevenLabs male voice...")
 
 try:
     client = ElevenLabs(api_key=API_KEY)
@@ -120,9 +125,9 @@ try:
         output_format="mp3_44100_128",
         text=text,
         voice_settings=VoiceSettings(
-            stability=0.45,
+            stability=0.50,
             similarity_boost=0.80,
-            style=0.20,
+            style=0.15,
             use_speaker_boost=True,
             speed=1.0,
         ),
