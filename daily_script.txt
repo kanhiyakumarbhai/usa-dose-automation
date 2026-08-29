@@ -1,61 +1,15 @@
-name: USA Dose Daily Automation
+Did you know there is a secret underground city hidden beneath the Denver International Airport? 
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "30 13 * * *"
+For decades, travelers and locals have whispered about massive tunnels, apocalyptic bunkers, and bizarre murals located deep below the baggage claims. 
 
-permissions:
-  contents: write
+The official story is that an automated baggage system was built, ran wildly over budget, suffered endless mechanical failures, and was eventually abandoned. 
 
-jobs:
-  generate:
-    runs-on: ubuntu-latest
+Yet, the conspiracy theories persist. 
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+Visitors point to the airport's unusual dedication plaques featuring Masonic symbols, a menacing blue horse statue with glowing red eyes that actually killed its creator, and underground maps that allegedly show entire multi-level structures completely sealed off from the public. 
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+While airport officials maintain these spaces are just empty utility tunnels and storage areas, the sheer scale of the construction continues to fuel America's greatest modern urban legend. 
 
-      - name: Install Gemini SDK
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install google-genai
+What do you think is really hiding down there? 
 
-      - name: Install Free TTS
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y espeak-ng
-
-      - name: Generate AI USA Short Script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python scripts/generate_script.py
-
-      - name: Generate English Voice
-        run: |
-          python scripts/generate_voice.py
-
-      - name: Check Generated Files
-        run: |
-          echo "Generated files:"
-          ls -lh daily_script.txt voice.mp3
-
-      - name: Save generated files
-        run: |
-          git config user.name "USA Dose Bot"
-          git config user.email "actions@users.noreply.github.com"
-
-          git add daily_script.txt voice.mp3
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Generate daily USA Short voice"
-            git push
-          fi
+Let us know in the comments and subscribe to USA Dose for more fascinating American mysteries.
