@@ -1,19 +1,38 @@
-USA DOSE DAILY SCRIPT
+name: USA Dose Daily Automation
 
-Topic: The most unusual place in America
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 13 * * *"
 
+permissions:
+  contents: write
 
-HOOK:
-Did you know this surprising fact about the USA? 🇺🇸
+jobs:
+  generate:
+    runs-on: ubuntu-latest
 
-TOPIC:
-The most unusual place in America
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-SCRIPT:
-Here is something most people don't know about America.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-The most unusual place in America.
+      - name: Install Gemini SDK
+        run: pip install -U google-genai
 
-This is one of those fascinating facts that makes the United States so interesting.
+      - name: Generate AI USA Short Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/generate_script.py
 
-Follow USA Dose for more amazing USA facts and stories! 🇺🇸🔥
+      - name: Save generated script
+        run: |
+          git config user.name "USA Dose Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add daily_script.txt
+          git diff --cached --quiet || git commit -m "Generate AI USA script"
+          git push
