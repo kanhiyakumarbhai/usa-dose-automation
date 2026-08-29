@@ -4,13 +4,11 @@ from google import genai
 api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
-    print("ERROR: GEMINI_API_KEY is not available.")
-    raise SystemExit(1)
+    raise RuntimeError("GEMINI_API_KEY secret is missing")
 
-try:
-    client = genai.Client(api_key=api_key)
+client = genai.Client(api_key=api_key)
 
-    prompt = """
+prompt = """
 You are the professional script writer for a YouTube Shorts channel called USA Dose.
 
 Create ONE original English YouTube Short about an interesting topic related to the United States.
@@ -18,10 +16,10 @@ Create ONE original English YouTube Short about an interesting topic related to 
 Requirements:
 - Target audience: USA viewers
 - Length: 30 to 60 seconds
-- Start with a strong curiosity hook
+- Start with a powerful curiosity hook
 - Use natural American English
 - Make it entertaining and informative
-- Use only factual information
+- Use factual information only
 - Do not invent facts
 - Avoid political persuasion
 - End with a short call to action
@@ -29,24 +27,20 @@ Requirements:
 - Return ONLY the final script
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=prompt
-    )
+interaction = client.interactions.create(
+    model="gemini-3.5-flash-lite",
+    input=prompt
+)
 
-    script = response.text.strip()
+script = interaction.output_text.strip()
 
-    if not script:
-        raise RuntimeError("Gemini returned an empty response.")
+if not script:
+    raise RuntimeError("Gemini returned an empty response.")
 
-    print("AI GENERATED USA SHORT:")
-    print(script)
+print("AI GENERATED USA SHORT:")
+print(script)
 
-    with open("daily_script.txt", "w", encoding="utf-8") as file:
-        file.write(script)
+with open("daily_script.txt", "w", encoding="utf-8") as file:
+    file.write(script)
 
-    print("SUCCESS: Script saved to daily_script.txt")
-
-except Exception as error:
-    print("ERROR:", str(error))
-    raise
+print("SUCCESS: Script saved to daily_script.txt")
