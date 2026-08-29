@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 2:00 AM IST = 8:30 PM UTC
+    # 2:00 AM IST = 20:30 UTC
     - cron: "30 20 * * *"
 
-    # 5:00 AM IST = 11:30 PM UTC
+    # 5:00 AM IST = 23:30 UTC
     - cron: "30 23 * * *"
 
-    # 8:00 AM IST = 2:30 AM UTC
+    # 8:00 AM IST = 02:30 UTC
     - cron: "30 2 * * *"
 
 permissions:
@@ -39,13 +39,17 @@ jobs:
           python-version: "3.12"
 
       # ========================================
-      # INSTALL DEPENDENCIES
+      # INSTALL SYSTEM PACKAGES
       # ========================================
 
       - name: Install FFmpeg and TTS
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg espeak-ng
+
+      # ========================================
+      # INSTALL PYTHON PACKAGES
+      # ========================================
 
       - name: Install Python packages
         run: |
@@ -59,7 +63,7 @@ jobs:
           python -m pip install google-auth-oauthlib
 
       # ========================================
-      # CHECK FILES
+      # CHECK PROJECT FILES
       # ========================================
 
       - name: Check project files
@@ -82,21 +86,11 @@ jobs:
           test -f scripts/generate_script.py
           test -f scripts/generate_voice.py
           test -f scripts/create_video.py
+          test -f scripts/download_clips.py
           test -f upload_video.py
-          test -f find_voices.py
 
           echo ""
           echo "All required files found."
-
-      # ========================================
-      # FIND ELEVENLABS VOICE
-      # ========================================
-
-      - name: Check ElevenLabs voices
-        env:
-          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-        run: |
-          python find_voices.py
 
       # ========================================
       # GENERATE DAILY SCRIPT
@@ -108,10 +102,14 @@ jobs:
         run: |
           python scripts/generate_script.py
 
+      # ========================================
+      # CHECK SCRIPT
+      # ========================================
+
       - name: Check generated script
         run: |
           echo "================================"
-          echo "DAILY SCRIPT"
+          echo "DAILY USA SCRIPT"
           echo "================================"
 
           test -f daily_script.txt
@@ -123,6 +121,46 @@ jobs:
           wc -w daily_script.txt
 
       # ========================================
+      # DOWNLOAD MOVING USA STOCK VIDEOS
+      # ========================================
+
+      - name: Download USA stock videos
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: |
+          rm -rf clips
+          python scripts/download_clips.py
+
+      # ========================================
+      # CHECK STOCK VIDEOS
+      # ========================================
+
+      - name: Check downloaded clips
+        run: |
+          echo "================================"
+          echo "USA STOCK VIDEO CLIPS"
+          echo "================================"
+
+          test -d clips
+
+          ls -lh clips
+
+          echo ""
+          echo "Number of clips:"
+          find clips -type f -name "*.mp4" | wc -l
+
+          echo ""
+
+          CLIP_COUNT=$(find clips -type f -name "*.mp4" | wc -l)
+
+          if [ "$CLIP_COUNT" -lt 3 ]; then
+            echo "ERROR: Less than 3 clips downloaded."
+            exit 1
+          fi
+
+          echo "Enough clips downloaded."
+
+      # ========================================
       # GENERATE VOICE
       # ========================================
 
@@ -131,6 +169,10 @@ jobs:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
           python scripts/generate_voice.py
+
+      # ========================================
+      # CHECK VOICE
+      # ========================================
 
       - name: Check voice
         run: |
@@ -156,10 +198,14 @@ jobs:
         run: |
           python scripts/create_video.py
 
-      - name: Check video
+      # ========================================
+      # CHECK VIDEO
+      # ========================================
+
+      - name: Check final video
         run: |
           echo "================================"
-          echo "VIDEO FILE"
+          echo "FINAL VIDEO"
           echo "================================"
 
           test -f usa_dose_short.mp4
@@ -186,7 +232,7 @@ jobs:
           python upload_video.py
 
       # ========================================
-      # SAVE SCRIPT
+      # SAVE DAILY SCRIPT
       # ========================================
 
       - name: Save generated script
@@ -197,7 +243,7 @@ jobs:
           git add daily_script.txt
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No script changes to commit."
           else
             git commit -m "Generate daily USA Short"
             git push
@@ -213,8 +259,11 @@ jobs:
           echo "================================"
           echo "USA DOSE AUTOMATION SUCCESS"
           echo "================================"
-          echo "Script generated"
-          echo "Voice generated"
-          echo "Video created"
-          echo "YouTube upload completed"
+          echo ""
+          echo "Daily script: OK"
+          echo "Stock videos: OK"
+          echo "Voice: OK"
+          echo "Video: OK"
+          echo "YouTube upload: OK"
+          echo ""
           echo "================================"
