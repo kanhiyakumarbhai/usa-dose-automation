@@ -4,10 +4,11 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 2 Shorts every day
+    # Short 1
     # 00:30 UTC = 06:00 AM IST
     - cron: "30 0 * * *"
 
+    # Short 2
     # 12:30 UTC = 06:00 PM IST
     - cron: "30 12 * * *"
 
@@ -48,9 +49,21 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
+
+          # ElevenLabs
           pip install elevenlabs
+
+          # HTTP
           pip install requests
+
+          # Google Gemini
           pip install google-genai
+
+          # YouTube API
+          pip install google-api-python-client
+          pip install google-auth
+          pip install google-auth-oauthlib
+          pip install google-auth-httplib2
 
       # ==========================================
       # CHECK PROJECT FILES
@@ -91,6 +104,11 @@ jobs:
 
           if [ ! -f "download_clips.py" ]; then
             echo "ERROR: download_clips.py not found"
+            exit 1
+          fi
+
+          if [ ! -f "upload_video.py" ]; then
+            echo "ERROR: upload_video.py not found"
             exit 1
           fi
 
@@ -215,11 +233,6 @@ jobs:
           echo "UPLOADING SHORT TO YOUTUBE"
           echo "================================"
 
-          if [ ! -f "upload_video.py" ]; then
-            echo "ERROR: upload_video.py not found"
-            exit 1
-          fi
-
           python upload_video.py
 
       # ==========================================
@@ -255,4 +268,5 @@ jobs:
           echo "Moving clips: YES"
           echo "Captions: YES"
           echo "Duration: 30-40 seconds"
+          echo "YouTube upload: YES"
           echo "================================"
