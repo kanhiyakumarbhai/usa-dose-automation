@@ -1,4 +1,3 @@
-```python
 import os
 import sys
 
@@ -25,43 +24,58 @@ if not text:
     print("ERROR: daily_script.txt is empty")
     sys.exit(1)
 
-# 30–40 second Short के लिए script को लगभग 75–100 words रखें
+# Keep the narration suitable for a 30–40 second Short
 words = text.split()
 
 if len(words) > 100:
     text = " ".join(words[:100])
 
-client = ElevenLabs(api_key=API_KEY)
-
 print("================================")
-print("Generating ElevenLabs Female Voice")
+print("Generating ElevenLabs Voice")
 print("================================")
+print("Voice ID: 9AlK0yDktVLRiFaf5EgC")
 
-audio = client.text_to_speech.convert(
-    voice_id="9AlK0yDktVLRiFaf5EgC",
-    model_id="eleven_flash_v2_5",
-    output_format="mp3_44100_128",
-    text=text,
-    voice_settings=VoiceSettings(
-        stability=0.45,
-        similarity_boost=0.80,
-        style=0.20,
-        use_speaker_boost=True,
-        speed=1.0,
-    ),
-)
+try:
+    client = ElevenLabs(api_key=API_KEY)
 
-with open(OUTPUT, "wb") as f:
-    for chunk in audio:
-        if chunk:
-            f.write(chunk)
+    audio = client.text_to_speech.convert(
+        voice_id="9AlK0yDktVLRiFaf5EgC",
+        model_id="eleven_flash_v2_5",
+        output_format="mp3_44100_128",
+        text=text,
+        voice_settings=VoiceSettings(
+            stability=0.45,
+            similarity_boost=0.80,
+            style=0.20,
+            use_speaker_boost=True,
+            speed=1.0,
+        ),
+    )
+
+    with open(OUTPUT, "wb") as f:
+        for chunk in audio:
+            if chunk:
+                f.write(chunk)
+
+except Exception as e:
+    print("================================")
+    print("ELEVENLABS ERROR")
+    print("================================")
+    print(e)
+    sys.exit(1)
 
 if not os.path.exists(OUTPUT):
     print("ERROR: voice.mp3 was not created")
     sys.exit(1)
 
+file_size = os.path.getsize(OUTPUT)
+
+if file_size < 1000:
+    print("ERROR: voice.mp3 is too small")
+    sys.exit(1)
+
 print("================================")
 print("VOICE SUCCESS!")
 print("Created:", OUTPUT)
+print("Size:", file_size, "bytes")
 print("================================")
-```
