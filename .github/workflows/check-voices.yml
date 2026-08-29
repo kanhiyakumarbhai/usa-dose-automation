@@ -1,0 +1,78 @@
+name: Check ElevenLabs Voices
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-voices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Check ElevenLabs API Voices
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          api_key = os.environ.get("ELEVENLABS_API_KEY")
+
+          if not api_key:
+              print("ERROR: ELEVENLABS_API_KEY secret not found")
+              raise SystemExit(1)
+
+          print("================================")
+          print("ELEVENLABS API VOICES")
+          print("================================")
+
+          response = requests.get(
+              "https://api.elevenlabs.io/v2/voices",
+              headers={"xi-api-key": api_key},
+              params={"page_size": 100},
+              timeout=30
+          )
+
+          print("API Status:", response.status_code)
+
+          if response.status_code != 200:
+              print(response.text)
+              raise SystemExit(1)
+
+          data = response.json()
+          voices = data.get("voices", [])
+
+          print("Total voices:", len(voices))
+          print()
+
+          for voice in voices:
+              labels = voice.get("labels") or {}
+
+              print("--------------------------------")
+              print("NAME     :", voice.get("name"))
+              print("VOICE ID :", voice.get("voice_id"))
+              print("CATEGORY :", voice.get("category"))
+              print("GENDER   :", labels.get("gender"))
+              print("ACCENT   :", labels.get("accent"))
+              print("AGE      :", labels.get("age"))
+              print("USE CASE :", labels.get("use_case"))
+              print("--------------------------------")
+
+          print()
+          print("================================")
+          print("VOICE CHECK COMPLETE")
+          print("================================")
+          PY
