@@ -4,11 +4,10 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Short 1
+    # 2 Shorts every day
     # 00:30 UTC = 06:00 AM IST
     - cron: "30 0 * * *"
 
-    # Short 2
     # 12:30 UTC = 06:00 PM IST
     - cron: "30 12 * * *"
 
@@ -49,10 +48,12 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install elevenlabs requests
+          pip install elevenlabs
+          pip install requests
+          pip install google-genai
 
       # ==========================================
-      # CHECK FILES
+      # CHECK PROJECT FILES
       # ==========================================
       - name: Check project files
         run: |
@@ -61,10 +62,20 @@ jobs:
           echo "================================"
 
           ls -lah
+
+          echo ""
+          echo "Scripts:"
+          ls -lah scripts || true
+
           echo ""
 
           if [ ! -f "daily_script.txt" ]; then
             echo "ERROR: daily_script.txt not found"
+            exit 1
+          fi
+
+          if [ ! -f "scripts/generate_script.py" ]; then
+            echo "ERROR: scripts/generate_script.py not found"
             exit 1
           fi
 
@@ -78,19 +89,36 @@ jobs:
             exit 1
           fi
 
-          echo "Required files found."
+          if [ ! -f "download_clips.py" ]; then
+            echo "ERROR: download_clips.py not found"
+            exit 1
+          fi
+
+          echo "All required files found."
 
       # ==========================================
       # GENERATE DAILY SCRIPT
       # ==========================================
-      - name: Generate daily script
+      - name: Generate daily USA Dose script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
-          if [ -f "scripts/generate_script.py" ]; then
-            python scripts/generate_script.py
-          else
-            echo "generate_script.py not found."
-            echo "Using existing daily_script.txt"
+          echo "================================"
+          echo "GENERATING DAILY SCRIPT"
+          echo "================================"
+
+          python scripts/generate_script.py
+
+          if [ ! -s "daily_script.txt" ]; then
+            echo "ERROR: daily_script.txt is empty"
+            exit 1
           fi
+
+          echo ""
+          echo "SCRIPT GENERATED"
+          echo "Characters:"
+          wc -c daily_script.txt
 
       # ==========================================
       # GENERATE FEMALE ELEVENLABS VOICE
@@ -100,7 +128,7 @@ jobs:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
           echo "================================"
-          echo "GENERATING FEMALE VOICE"
+          echo "GENERATING ELEVENLABS FEMALE VOICE"
           echo "================================"
 
           python scripts/generate_voice.py
@@ -110,10 +138,12 @@ jobs:
             exit 1
           fi
 
+          echo ""
+          echo "VOICE CREATED"
           ls -lh voice.mp3
 
       # ==========================================
-      # DOWNLOAD MOVING STOCK CLIPS
+      # DOWNLOAD MOVING STOCK VIDEO CLIPS
       # ==========================================
       - name: Download moving stock clips
         env:
@@ -123,19 +153,27 @@ jobs:
           echo "DOWNLOADING MOVING STOCK CLIPS"
           echo "================================"
 
-          if [ -f "download_clips.py" ]; then
-            python download_clips.py
-          else
-            echo "ERROR: download_clips.py not found"
+          rm -rf clips
+          mkdir -p clips
+
+          python download_clips.py
+
+          echo ""
+          echo "DOWNLOADED CLIPS:"
+          find clips -maxdepth 1 -type f -print || true
+
+          CLIP_COUNT=$(find clips -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.mov" \) | wc -l)
+
+          echo ""
+          echo "Clip count: $CLIP_COUNT"
+
+          if [ "$CLIP_COUNT" -lt 1 ]; then
+            echo "ERROR: No moving video clips were downloaded"
             exit 1
           fi
 
-          echo ""
-          echo "Downloaded clips:"
-          find clips -maxdepth 1 -type f -print 2>/dev/null || true
-
       # ==========================================
-      # CREATE FINAL SHORT
+      # CREATE FINAL VIDEO
       # ==========================================
       - name: Create USA Dose Short
         run: |
@@ -151,8 +189,18 @@ jobs:
           fi
 
           echo ""
-          echo "FINAL VIDEO:"
+          echo "FINAL VIDEO CREATED:"
           ls -lh usa_dose_short.mp4
+
+          echo ""
+          echo "VIDEO INFORMATION:"
+
+          ffprobe \
+            -v error \
+            -select_streams v:0 \
+            -show_entries stream=codec_name,width,height,r_frame_rate \
+            -of default=noprint_wrappers=1 \
+            usa_dose_short.mp4 || true
 
       # ==========================================
       # UPLOAD TO YOUTUBE
@@ -164,7 +212,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
           echo "================================"
-          echo "UPLOADING USA DOSE SHORT"
+          echo "UPLOADING SHORT TO YOUTUBE"
           echo "================================"
 
           if [ ! -f "upload_video.py" ]; then
@@ -175,30 +223,36 @@ jobs:
           python upload_video.py
 
       # ==========================================
-      # SAVE UPDATED FILES
+      # SAVE GENERATED FILES
       # ==========================================
-      - name: Commit generated files
+      - name: Save generated files
         run: |
           git config user.name "USA Dose Bot"
           git config user.email "actions@users.noreply.github.com"
 
           git add daily_script.txt voice.mp3 usa_dose_short.mp4 2>/dev/null || true
 
-          git diff --cached --quiet || git commit -m "Daily USA Dose Short"
-
-          git push || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Daily USA Dose Short"
+            git push
+          fi
 
       # ==========================================
-      # DONE
+      # COMPLETE
       # ==========================================
-      - name: Complete
+      - name: Automation complete
         run: |
+          echo ""
           echo "================================"
           echo "USA DOSE AUTOMATION COMPLETE"
           echo "================================"
-          echo "Female voice: Laura"
+          echo "Daily Shorts: 2"
+          echo "Voice: Laura"
+          echo "Voice: Female"
+          echo "Accent: American"
           echo "Moving clips: YES"
-          echo "Short duration: 30-40 seconds"
-          echo "Daily videos: 2"
-          echo "Schedule: 00:30 UTC and 12:30 UTC"
+          echo "Captions: YES"
+          echo "Duration: 30-40 seconds"
           echo "================================"
