@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import textwrap
 
 VOICE = "voice.mp3"
 SCRIPT = "daily_script.txt"
@@ -22,17 +21,21 @@ if not text:
     print("ERROR: daily_script.txt is empty")
     sys.exit(1)
 
-# Escape text for FFmpeg
+# Clean text for FFmpeg drawtext
 safe_text = (
     text.replace("\\", "\\\\")
         .replace(":", "\\:")
         .replace("'", "\\'")
         .replace("%", "\\%")
         .replace("\n", " ")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
 )
 
-# Create a vertical 1080x1920 video.
-# The voice determines the final duration.
+# Limit very long scripts
+safe_text = safe_text[:900]
+
+# YouTube Shorts: 1080x1920, 30 FPS
 video_filter = (
     "drawtext="
     "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
@@ -40,18 +43,18 @@ video_filter = (
     "fontcolor=white:"
     "fontsize=100:"
     "x=(w-text_w)/2:"
-    "y=260,"
+    "y=250,"
     
     "drawtext="
     "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
     f"text='{safe_text}':"
     "fontcolor=white:"
-    "fontsize=48:"
+    "fontsize=46:"
     "line_spacing=18:"
-    "x=80:"
-    "y=650:"
+    "x=90:"
+    "y=620:"
     "box=1:"
-    "boxcolor=black@0.55:"
+    "boxcolor=black@0.60:"
     "boxborderw=35:"
     "text_align=center"
 )
@@ -59,20 +62,45 @@ video_filter = (
 command = [
     "ffmpeg",
     "-y",
+
+    # Generate vertical background
     "-f", "lavfi",
     "-i", "color=c=0x071A3D:s=1080x1920:r=30",
+
+    # Voice
     "-i", VOICE,
+
+    # Video filter
     "-vf", video_filter,
+
+    # YouTube-compatible video
     "-c:v", "libx264",
-    "-preset", "veryfast",
+    "-profile:v", "high",
+    "-level", "4.2",
+    "-preset", "medium",
+    "-crf", "20",
     "-pix_fmt", "yuv420p",
+    "-r", "30",
+
+    # Audio
     "-c:a", "aac",
-    "-b:a", "128k",
+    "-profile:a", "aac_low",
+    "-b:a", "192k",
+    "-ar", "48000",
+    "-ac", "2",
+
+    # MP4 compatibility
+    "-movflags", "+faststart",
+
+    # Stop when voice ends
     "-shortest",
+
     OUTPUT
 ]
 
-print("Creating USA Dose Short...")
+print("================================")
+print("Creating USA Dose YouTube Short")
+print("================================")
 
 result = subprocess.run(
     command,
@@ -89,5 +117,26 @@ if not os.path.exists(OUTPUT):
     print("ERROR: Video was not created")
     sys.exit(1)
 
+# Verify video file
+probe = subprocess.run(
+    [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries",
+        "stream=codec_name,width,height,pix_fmt,r_frame_rate",
+        "-of", "default=noprint_wrappers=1",
+        OUTPUT
+    ],
+    capture_output=True,
+    text=True
+)
+
+print()
+print("VIDEO INFORMATION:")
+print(probe.stdout)
+
+print("================================")
 print("SUCCESS!")
 print(f"Created: {OUTPUT}")
+print("================================")
