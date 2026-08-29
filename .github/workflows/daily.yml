@@ -1,0 +1,17 @@
+name: USA Dose Daily Automation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 13 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Automation
+        run: |
+          echo "🇺🇸 USA Dose Automation Started!"
+          echo "🎬 Daily Short workflow is working!"
+          date
