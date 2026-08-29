@@ -35,7 +35,7 @@ client = ElevenLabs(api_key=API_KEY)
 print("Generating natural ElevenLabs voice...")
 
 audio = client.text_to_speech.convert(
-    voice_id="JBFqnCBsd6RMkjVDRZzb",
+   voice_id="WZlYpi1yf6zJhNWXih74",
     model_id="eleven_flash_v2_5",
     output_format="mp3_44100_128",
     text=text,
