@@ -1,3 +1,4 @@
+```yaml
 name: USA Dose Daily Automation
 
 on:
@@ -31,11 +32,18 @@ jobs:
           python -m pip install google-auth-httplib2
           python -m pip install google-auth-oauthlib
           python -m pip install elevenlabs
+          python -m pip install requests
 
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+      - name: Find Female American Voices
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        run: |
+          python scripts/find_voices.py
 
       - name: Generate AI USA Short Script
         env:
@@ -55,8 +63,13 @@ jobs:
 
       - name: Check Generated Files
         run: |
-          echo "Generated files:"
-          ls -lh daily_script.txt voice.mp3 usa_dose_short.mp4 upload_video.py
+          echo "================================"
+          echo "CHECKING GENERATED FILES"
+          echo "================================"
+          ls -lh daily_script.txt
+          ls -lh voice.mp3
+          ls -lh usa_dose_short.mp4
+          ls -lh upload_video.py
 
       - name: Upload Short to YouTube
         env:
@@ -79,3 +92,4 @@ jobs:
             git commit -m "Generate daily USA Short"
             git push
           fi
+```
