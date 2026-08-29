@@ -58,7 +58,7 @@ jobs:
       - name: Check Generated Files
         run: |
           echo "Generated files:"
-          ls -lh daily_script.txt voice.mp3 usa_dose_short.mp4
+          ls -lh daily_script.txt voice.mp3 usa_dose_short.mp4 upload_video.py
 
       - name: Upload Short to YouTube
         env:
@@ -66,9 +66,9 @@ jobs:
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
-          python scripts/upload_video.py
+          python upload_video.py
 
-      - name: Save generated files
+      - name: Save generated script
         run: |
           git config user.name "USA Dose Bot"
           git config user.email "actions@users.noreply.github.com"
