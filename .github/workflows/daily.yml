@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 2:00 AM IST = 20:30 UTC
+    # 2:00 AM IST
     - cron: "30 20 * * *"
 
-    # 5:00 AM IST = 23:30 UTC
+    # 5:00 AM IST
     - cron: "30 23 * * *"
 
-    # 8:00 AM IST = 02:30 UTC
+    # 8:00 AM IST
     - cron: "30 2 * * *"
 
 permissions:
@@ -22,34 +22,18 @@ jobs:
 
     steps:
 
-      # ========================================
-      # CHECKOUT
-      # ========================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # ========================================
-      # PYTHON
-      # ========================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # ========================================
-      # INSTALL SYSTEM PACKAGES
-      # ========================================
-
       - name: Install FFmpeg and TTS
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg espeak-ng
-
-      # ========================================
-      # INSTALL PYTHON PACKAGES
-      # ========================================
 
       - name: Install Python packages
         run: |
@@ -63,7 +47,7 @@ jobs:
           python -m pip install google-auth-oauthlib
 
       # ========================================
-      # CHECK PROJECT FILES
+      # CHECK FILES
       # ========================================
 
       - name: Check project files
@@ -72,9 +56,7 @@ jobs:
           echo "PROJECT FILES"
           echo "================================"
 
-          echo "Root:"
           ls -lah
-
           echo ""
           echo "Scripts:"
           ls -lah scripts
@@ -85,15 +67,15 @@ jobs:
           test -f daily_script.txt
           test -f scripts/generate_script.py
           test -f scripts/generate_voice.py
-          test -f scripts/create_video.py
-          test -f scripts/download_clips.py
+          test -f create_video.py
+          test -f download_clips.py
           test -f upload_video.py
 
           echo ""
-          echo "All required files found."
+          echo "ALL REQUIRED FILES FOUND"
 
       # ========================================
-      # GENERATE DAILY SCRIPT
+      # GENERATE SCRIPT
       # ========================================
 
       - name: Generate daily USA script
@@ -102,10 +84,6 @@ jobs:
         run: |
           python scripts/generate_script.py
 
-      # ========================================
-      # CHECK SCRIPT
-      # ========================================
-
       - name: Check generated script
         run: |
           echo "================================"
@@ -113,15 +91,10 @@ jobs:
           echo "================================"
 
           test -f daily_script.txt
-
           cat daily_script.txt
 
-          echo ""
-          echo "Word count:"
-          wc -w daily_script.txt
-
       # ========================================
-      # DOWNLOAD MOVING USA STOCK VIDEOS
+      # DOWNLOAD USA MOVING VIDEOS
       # ========================================
 
       - name: Download USA stock videos
@@ -129,36 +102,27 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           rm -rf clips
-          python scripts/download_clips.py
-
-      # ========================================
-      # CHECK STOCK VIDEOS
-      # ========================================
+          python download_clips.py
 
       - name: Check downloaded clips
         run: |
           echo "================================"
-          echo "USA STOCK VIDEO CLIPS"
+          echo "USA STOCK VIDEOS"
           echo "================================"
 
           test -d clips
 
           ls -lh clips
 
-          echo ""
-          echo "Number of clips:"
-          find clips -type f -name "*.mp4" | wc -l
-
-          echo ""
-
           CLIP_COUNT=$(find clips -type f -name "*.mp4" | wc -l)
+
+          echo ""
+          echo "Clips downloaded: $CLIP_COUNT"
 
           if [ "$CLIP_COUNT" -lt 3 ]; then
             echo "ERROR: Less than 3 clips downloaded."
             exit 1
           fi
-
-          echo "Enough clips downloaded."
 
       # ========================================
       # GENERATE VOICE
@@ -170,33 +134,22 @@ jobs:
         run: |
           python scripts/generate_voice.py
 
-      # ========================================
-      # CHECK VOICE
-      # ========================================
-
       - name: Check voice
         run: |
           echo "================================"
-          echo "VOICE FILE"
+          echo "VOICE"
           echo "================================"
 
           test -f voice.mp3
-
           ls -lh voice.mp3
-
-          ffprobe \
-            -v error \
-            -show_entries format=duration \
-            -of default=noprint_wrappers=1 \
-            voice.mp3
 
       # ========================================
       # CREATE VIDEO
       # ========================================
 
-      - name: Create YouTube Short
+      - name: Create moving video
         run: |
-          python scripts/create_video.py
+          python create_video.py
 
       # ========================================
       # CHECK VIDEO
@@ -220,7 +173,7 @@ jobs:
             usa_dose_short.mp4
 
       # ========================================
-      # UPLOAD TO YOUTUBE
+      # UPLOAD YOUTUBE
       # ========================================
 
       - name: Upload YouTube Short
@@ -232,7 +185,7 @@ jobs:
           python upload_video.py
 
       # ========================================
-      # SAVE DAILY SCRIPT
+      # SAVE SCRIPT
       # ========================================
 
       - name: Save generated script
@@ -243,7 +196,7 @@ jobs:
           git add daily_script.txt
 
           if git diff --cached --quiet; then
-            echo "No script changes to commit."
+            echo "No script changes."
           else
             git commit -m "Generate daily USA Short"
             git push
@@ -259,11 +212,9 @@ jobs:
           echo "================================"
           echo "USA DOSE AUTOMATION SUCCESS"
           echo "================================"
-          echo ""
-          echo "Daily script: OK"
+          echo "Script: OK"
           echo "Stock videos: OK"
           echo "Voice: OK"
           echo "Video: OK"
-          echo "YouTube upload: OK"
-          echo ""
+          echo "YouTube: OK"
           echo "================================"
