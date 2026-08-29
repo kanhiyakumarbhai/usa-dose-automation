@@ -13,45 +13,69 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Repository को runner पर लाना
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Python setup
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # 3. Gemini SDK install
       - name: Install Gemini SDK
         run: |
           python -m pip install --upgrade pip
           python -m pip install google-genai
 
-      - name: Check Gemini Secret
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # 4. Free TTS install
+      - name: Install Free TTS
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "ERROR: GEMINI_API_KEY secret is missing"
-            exit 1
-          fi
-          echo "Gemini API key is available."
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng
 
+      # 5. FFmpeg install
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      # 6. Gemini से USA Shorts script बनाना
       - name: Generate AI USA Short Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python scripts/generate_script.py
 
-      - name: Save generated script
+      # 7. English voice बनाना
+      - name: Generate English Voice
+        run: |
+          python scripts/generate_voice.py
+
+      # 8. Voice + background से 9:16 video बनाना
+      - name: Create YouTube Short
+        run: |
+          python scripts/create_video.py
+
+      # 9. Generated files check करना
+      - name: Check Generated Files
+        run: |
+          echo "Generated files:"
+          ls -lh daily_script.txt voice.mp3 usa_dose_short.mp4
+
+      # 10. Files को repository में save करना
+      - name: Save generated files
         run: |
           git config user.name "USA Dose Bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git add daily_script.txt
+          git add daily_script.txt voice.mp3 usa_dose_short.mp4
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Generate AI USA script"
+            git commit -m "Generate daily USA Short video"
             git push
           fi
