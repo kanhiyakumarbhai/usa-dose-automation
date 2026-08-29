@@ -1,4 +1,3 @@
-```python
 import os
 import sys
 
@@ -129,4 +128,3 @@ print("Privacy: PUBLIC")
 print("================================")
 print("Video uploaded successfully.")
 print("================================")
-```
