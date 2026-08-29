@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "30 13 * * *"
-    - cron: "30 16 * * *"
-    - cron: "30 19 * * *"
+    # 2:00 AM IST = 8:30 PM UTC
+    - cron: "30 20 * * *"
+
+    # 5:00 AM IST = 11:30 PM UTC
+    - cron: "30 23 * * *"
+
+    # 8:00 AM IST = 2:30 AM UTC
+    - cron: "30 2 * * *"
 
 permissions:
   contents: write
@@ -17,29 +22,45 @@ jobs:
 
     steps:
 
+      # ========================================
+      # CHECKOUT
+      # ========================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # ========================================
+      # PYTHON
+      # ========================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # ========================================
+      # INSTALL DEPENDENCIES
+      # ========================================
+
+      - name: Install FFmpeg and TTS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng
+
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
+          python -m pip install requests
+          python -m pip install elevenlabs
           python -m pip install google-genai
           python -m pip install google-api-python-client
           python -m pip install google-auth
           python -m pip install google-auth-httplib2
           python -m pip install google-auth-oauthlib
-          python -m pip install elevenlabs
-          python -m pip install requests
 
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+      # ========================================
+      # CHECK FILES
+      # ========================================
 
       - name: Check project files
         run: |
@@ -47,6 +68,7 @@ jobs:
           echo "PROJECT FILES"
           echo "================================"
 
+          echo "Root:"
           ls -lah
 
           echo ""
@@ -56,74 +78,116 @@ jobs:
           echo ""
           echo "Checking required files..."
 
+          test -f daily_script.txt
           test -f scripts/generate_script.py
           test -f scripts/generate_voice.py
           test -f scripts/create_video.py
-          test -f find_voices.py
           test -f upload_video.py
+          test -f find_voices.py
 
           echo ""
           echo "All required files found."
 
-      - name: Find Female American Voices
+      # ========================================
+      # FIND ELEVENLABS VOICE
+      # ========================================
+
+      - name: Check ElevenLabs voices
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
           python find_voices.py
 
-      - name: Generate AI USA Short Script
+      # ========================================
+      # GENERATE DAILY SCRIPT
+      # ========================================
+
+      - name: Generate daily USA script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python scripts/generate_script.py
 
-      - name: Check daily script
+      - name: Check generated script
         run: |
           echo "================================"
           echo "DAILY SCRIPT"
           echo "================================"
 
           test -f daily_script.txt
+
           cat daily_script.txt
 
           echo ""
           echo "Word count:"
           wc -w daily_script.txt
 
-      - name: Generate ElevenLabs Female Voice
+      # ========================================
+      # GENERATE VOICE
+      # ========================================
+
+      - name: Generate voice
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
           python scripts/generate_voice.py
 
-      - name: Check voice file
+      - name: Check voice
         run: |
+          echo "================================"
+          echo "VOICE FILE"
+          echo "================================"
+
           test -f voice.mp3
+
           ls -lh voice.mp3
+
+          ffprobe \
+            -v error \
+            -show_entries format=duration \
+            -of default=noprint_wrappers=1 \
+            voice.mp3
+
+      # ========================================
+      # CREATE VIDEO
+      # ========================================
 
       - name: Create YouTube Short
         run: |
           python scripts/create_video.py
 
-      - name: Check generated video
+      - name: Check video
         run: |
+          echo "================================"
+          echo "VIDEO FILE"
+          echo "================================"
+
           test -f usa_dose_short.mp4
+
           ls -lh usa_dose_short.mp4
 
           ffprobe \
             -v error \
             -show_entries format=duration,size \
-            -show_entries stream=codec_name,width,height \
+            -show_entries stream=codec_name,width,height,pix_fmt \
             -of default=noprint_wrappers=1 \
             usa_dose_short.mp4
 
-      - name: Upload Short to YouTube
+      # ========================================
+      # UPLOAD TO YOUTUBE
+      # ========================================
+
+      - name: Upload YouTube Short
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
           python upload_video.py
+
+      # ========================================
+      # SAVE SCRIPT
+      # ========================================
 
       - name: Save generated script
         run: |
@@ -139,8 +203,18 @@ jobs:
             git push
           fi
 
+      # ========================================
+      # SUCCESS
+      # ========================================
+
       - name: Automation completed
         run: |
+          echo ""
           echo "================================"
           echo "USA DOSE AUTOMATION SUCCESS"
+          echo "================================"
+          echo "Script generated"
+          echo "Voice generated"
+          echo "Video created"
+          echo "YouTube upload completed"
           echo "================================"
