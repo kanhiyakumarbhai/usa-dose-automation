@@ -14,68 +14,70 @@ jobs:
 
     steps:
 
-      # 1. Repository को runner पर लाना
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Python setup
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 3. Gemini SDK install
-      - name: Install Gemini SDK
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
           python -m pip install google-genai
+          python -m pip install google-api-python-client
+          python -m pip install google-auth
+          python -m pip install google-auth-httplib2
+          python -m pip install google-auth-oauthlib
 
-      # 4. Free TTS install
       - name: Install Free TTS
         run: |
           sudo apt-get update
           sudo apt-get install -y espeak-ng
 
-      # 5. FFmpeg install
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      # 6. Gemini से USA Shorts script बनाना
       - name: Generate AI USA Short Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python scripts/generate_script.py
 
-      # 7. English voice बनाना
       - name: Generate English Voice
         run: |
           python scripts/generate_voice.py
 
-      # 8. Voice + background से 9:16 video बनाना
       - name: Create YouTube Short
         run: |
           python scripts/create_video.py
 
-      # 9. Generated files check करना
       - name: Check Generated Files
         run: |
           echo "Generated files:"
           ls -lh daily_script.txt voice.mp3 usa_dose_short.mp4
 
-      # 10. Files को repository में save करना
+      - name: Upload Short to YouTube
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: |
+          python scripts/upload_video.py
+
       - name: Save generated files
         run: |
           git config user.name "USA Dose Bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git add daily_script.txt voice.mp3 usa_dose_short.mp4
+          git add daily_script.txt
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Generate daily USA Short video"
+            git commit -m "Generate daily USA Short"
             git push
           fi
