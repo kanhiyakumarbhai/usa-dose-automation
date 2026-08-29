@@ -1,3 +1,4 @@
+```python
 import os
 import sys
 
@@ -24,18 +25,20 @@ if not text:
     print("ERROR: daily_script.txt is empty")
     sys.exit(1)
 
-# Keep narration suitable for a 30–40 second Short.
-# Approx. 75–95 English words is a good starting point.
-if len(text.split()) > 105:
-    words = text.split()
-    text = " ".join(words[:105])
+# 30–40 second Short के लिए script को लगभग 75–100 words रखें
+words = text.split()
+
+if len(words) > 100:
+    text = " ".join(words[:100])
 
 client = ElevenLabs(api_key=API_KEY)
 
-print("Generating natural ElevenLabs voice...")
+print("================================")
+print("Generating ElevenLabs Female Voice")
+print("================================")
 
 audio = client.text_to_speech.convert(
-   voice_id="WZlYpi1yf6zJhNWXih74",
+    voice_id="9AlK0yDktVLRiFaf5EgC",
     model_id="eleven_flash_v2_5",
     output_format="mp3_44100_128",
     text=text,
@@ -57,5 +60,8 @@ if not os.path.exists(OUTPUT):
     print("ERROR: voice.mp3 was not created")
     sys.exit(1)
 
-print("SUCCESS!")
+print("================================")
+print("VOICE SUCCESS!")
 print("Created:", OUTPUT)
+print("================================")
+```
