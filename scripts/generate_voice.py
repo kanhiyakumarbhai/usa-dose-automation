@@ -1,4 +1,3 @@
-```text id="7k2mqa"
 import os
 import sys
 
@@ -126,4 +125,3 @@ print("Accent: American")
 print("Output:", OUTPUT_FILE)
 print("File size:", file_size, "bytes")
 print("================================")
-```
