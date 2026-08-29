@@ -2,7 +2,6 @@ import os
 import sys
 import subprocess
 import random
-import math
 
 VOICE = "voice.mp3"
 SCRIPT = "daily_script.txt"
@@ -14,13 +13,13 @@ WIDTH = 1080
 HEIGHT = 1920
 FPS = 30
 
-# ==========================================
-# CHECK FILES
-# ==========================================
-
 print("================================")
 print("USA DOSE VIDEO CREATOR")
 print("================================")
+
+# ==========================================
+# CHECK FILES
+# ==========================================
 
 if not os.path.exists(VOICE):
     print("ERROR: voice.mp3 not found")
@@ -43,20 +42,19 @@ if not text:
 
 clips = []
 
-for filename in sorted(os.listdir(CLIPS_DIR)):
+for filename in os.listdir(CLIPS_DIR):
     if filename.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
         clips.append(os.path.join(CLIPS_DIR, filename))
 
 if len(clips) < 3:
-    print("ERROR: At least 3 video clips are required.")
-    print("Found:", len(clips))
+    print("ERROR: At least 3 clips are required.")
     sys.exit(1)
 
 print("Voice:", VOICE)
 print("Clips found:", len(clips))
 
 # ==========================================
-# GET VOICE DURATION
+# VOICE DURATION
 # ==========================================
 
 probe = subprocess.run(
@@ -77,15 +75,18 @@ except:
     print("ERROR: Could not read voice duration")
     sys.exit(1)
 
-print("Voice duration:", round(voice_duration, 2), "seconds")
+# Maximum 40 seconds
+TARGET_DURATION = min(40.0, voice_duration)
 
-# Keep final video between approximately 30–40 seconds.
-TARGET_DURATION = max(30.0, min(40.0, voice_duration))
+# Minimum target 30 seconds
+if TARGET_DURATION < 30:
+    TARGET_DURATION = voice_duration
 
-print("Target duration:", round(TARGET_DURATION, 2), "seconds")
+print("Voice duration:", round(voice_duration, 2))
+print("Target duration:", round(TARGET_DURATION, 2))
 
 # ==========================================
-# PREPARE WORK DIRECTORY
+# CLEAN WORK DIRECTORY
 # ==========================================
 
 if os.path.exists(WORK_DIR):
@@ -96,51 +97,41 @@ if os.path.exists(WORK_DIR):
 
 os.makedirs(WORK_DIR, exist_ok=True)
 
-# Randomize clips so each run can look different.
-random.shuffle(clips)
+# ==========================================
+# RANDOM CLIPS
+# ==========================================
 
-# Use up to 5 clips.
+random.shuffle(clips)
 clips = clips[:5]
 
 print()
 print("Selected clips:")
 
 for clip in clips:
-    print(" -", clip)
+    print("-", clip)
 
 # ==========================================
-# CALCULATE CLIP DURATIONS
+# CREATE CLIP PARTS
 # ==========================================
 
-clip_count = len(clips)
-
-# Divide the voice duration between clips.
-base_duration = TARGET_DURATION / clip_count
-
-# ==========================================
-# CREATE EACH VIDEO PART
-# ==========================================
+clip_duration = TARGET_DURATION / len(clips)
 
 parts = []
 
 for index, clip in enumerate(clips):
 
-    output_part = os.path.join(
+    part = os.path.join(
         WORK_DIR,
         f"part_{index + 1}.mp4"
     )
-
-    duration = base_duration
 
     print()
     print("--------------------------------")
     print("Processing clip", index + 1)
     print("Source:", clip)
-    print("Duration:", round(duration, 2))
+    print("Duration:", round(clip_duration, 2))
     print("--------------------------------")
 
-    # Different starting point for each clip.
-    # -stream_loop allows short clips to repeat if necessary.
     command = [
         "ffmpeg",
         "-y",
@@ -148,7 +139,7 @@ for index, clip in enumerate(clips):
         "-stream_loop", "-1",
         "-i", clip,
 
-        "-t", str(duration),
+        "-t", str(clip_duration),
 
         "-vf",
         (
@@ -169,7 +160,7 @@ for index, clip in enumerate(clips):
 
         "-movflags", "+faststart",
 
-        output_part
+        part
     ]
 
     result = subprocess.run(
@@ -179,18 +170,18 @@ for index, clip in enumerate(clips):
     )
 
     if result.returncode != 0:
-        print("FFmpeg clip ERROR:")
+        print("CLIP ERROR")
         print(result.stderr)
         sys.exit(1)
 
-    if not os.path.exists(output_part):
-        print("ERROR: Part was not created")
+    if not os.path.exists(part):
+        print("ERROR: Clip part not created")
         sys.exit(1)
 
-    parts.append(output_part)
+    parts.append(part)
 
 # ==========================================
-# CREATE CONCAT FILE
+# CONCAT FILE
 # ==========================================
 
 concat_file = os.path.join(
@@ -199,38 +190,40 @@ concat_file = os.path.join(
 )
 
 with open(concat_file, "w", encoding="utf-8") as f:
+
     for part in parts:
-        absolute_path = os.path.abspath(part)
+
+        path = os.path.abspath(part)
+
         f.write(
             "file '" +
-            absolute_path.replace("'", "'\\''") +
+            path.replace("'", "'\\''") +
             "'\n"
         )
 
 # ==========================================
-# PREPARE CAPTION TEXT
+# CAPTION TEXT
 # ==========================================
 
-# Keep caption reasonably short.
 caption = " ".join(text.split())
 
-if len(caption) > 850:
-    caption = caption[:850] + "..."
+if len(caption) > 900:
+    caption = caption[:900] + "..."
 
-# Escape FFmpeg drawtext special characters.
+# FFmpeg escaping
 caption = (
     caption
     .replace("\\", "\\\\")
     .replace(":", "\\:")
     .replace("'", "\\'")
     .replace("%", "\\%")
+    .replace(",", "\\,")
     .replace("[", "\\[")
     .replace("]", "\\]")
-    .replace(",", "\\,")
 )
 
 # ==========================================
-# JOIN CLIPS + ADD VOICE + TEXT
+# FINAL VIDEO
 # ==========================================
 
 print()
@@ -239,6 +232,10 @@ print("Joining moving clips...")
 print("Adding voice...")
 print("Adding captions...")
 print("================================")
+
+# IMPORTANT:
+# No text_align option.
+# This avoids the FFmpeg error you received.
 
 filter_complex = (
     "[0:v]"
@@ -257,18 +254,17 @@ filter_complex = (
     "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
     f"text='{caption}':"
     "fontcolor=white:"
-    "fontsize=43:"
+    "fontsize=42:"
     "line_spacing=12:"
-    "x=70:"
-    "y=h-620:"
+    "x=(w-text_w)/2:"
+    "y=h-650:"
     "box=1:"
-    "boxcolor=black@0.65:"
-    "boxborderw=30:"
-    "text_align=center"
+    "boxcolor=black@0.68:"
+    "boxborderw=28"
     "[v]"
 )
 
-final_command = [
+command = [
     "ffmpeg",
     "-y",
 
@@ -307,12 +303,13 @@ final_command = [
 ]
 
 result = subprocess.run(
-    final_command,
+    command,
     capture_output=True,
     text=True
 )
 
 if result.returncode != 0:
+    print()
     print("================================")
     print("FINAL VIDEO ERROR")
     print("================================")
@@ -320,17 +317,17 @@ if result.returncode != 0:
     sys.exit(1)
 
 # ==========================================
-# VERIFY OUTPUT
+# VERIFY
 # ==========================================
 
 if not os.path.exists(OUTPUT):
     print("ERROR: Final video was not created")
     sys.exit(1)
 
-file_size = os.path.getsize(OUTPUT)
+size = os.path.getsize(OUTPUT)
 
-if file_size < 100000:
-    print("ERROR: Final video file is too small")
+if size < 100000:
+    print("ERROR: Video file is too small")
     sys.exit(1)
 
 print()
@@ -359,6 +356,5 @@ print("================================")
 print("VIDEO SUCCESS!")
 print("================================")
 print("Created:", OUTPUT)
-print("Size:", file_size, "bytes")
 print("Moving clips:", len(clips))
 print("================================")
