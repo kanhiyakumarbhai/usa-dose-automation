@@ -1,93 +1,132 @@
+```python
 import os
-from google.oauth2.credentials import Credentials
+import sys
+
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+
 
 VIDEO_FILE = "usa_dose_short.mp4"
 
-client_id = os.getenv("YOUTUBE_CLIENT_ID")
-client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
-refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET")
+REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN")
 
-if not client_id:
-    raise RuntimeError("YOUTUBE_CLIENT_ID is missing")
+if not CLIENT_ID:
+    print("ERROR: YOUTUBE_CLIENT_ID is missing")
+    sys.exit(1)
 
-if not client_secret:
-    raise RuntimeError("YOUTUBE_CLIENT_SECRET is missing")
+if not CLIENT_SECRET:
+    print("ERROR: YOUTUBE_CLIENT_SECRET is missing")
+    sys.exit(1)
 
-if not refresh_token:
-    raise RuntimeError("YOUTUBE_REFRESH_TOKEN is missing")
+if not REFRESH_TOKEN:
+    print("ERROR: YOUTUBE_REFRESH_TOKEN is missing")
+    sys.exit(1)
 
 if not os.path.exists(VIDEO_FILE):
-    raise RuntimeError(f"{VIDEO_FILE} not found")
+    print(f"ERROR: {VIDEO_FILE} not found")
+    sys.exit(1)
+
+
+print("================================")
+print("UPLOADING SHORT TO YOUTUBE")
+print("================================")
+print("Privacy: PUBLIC")
+print("Video:", VIDEO_FILE)
+print("================================")
+
+
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 credentials = Credentials(
     token=None,
-    refresh_token=refresh_token,
+    refresh_token=REFRESH_TOKEN,
     token_uri="https://oauth2.googleapis.com/token",
-    client_id=client_id,
-    client_secret=client_secret,
-    scopes=["https://www.googleapis.com/auth/youtube.upload"],
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    scopes=SCOPES,
 )
 
-youtube = build("youtube", "v3", credentials=credentials)
+youtube = build(
+    "youtube",
+    "v3",
+    credentials=credentials,
+    cache_discovery=False,
+)
 
-body = {
-    "snippet": {
-        "title": "Amazing USA Fact! 🇺🇸 #Shorts",
-        "description": """🇺🇸 USA Dose
 
-Amazing facts and interesting stories about the United States.
+title = "USA Dose 🇺🇸 | Did You Know This?"
+
+description = """🇺🇸 USA Dose
+
+Interesting facts, history, mysteries and surprising stories from America.
 
 Subscribe for daily USA Shorts!
 
-#USA #America #Shorts #USAFacts
-""",
-        "tags": [
-            "USA",
-            "America",
-            "United States",
-            "USA facts",
-            "American facts",
-            "Shorts"
-        ],
-        "categoryId": "24"
+#Shorts #USA #America #USAFacts #DidYouKnow
+"""
+
+tags = [
+    "USA",
+    "America",
+    "USA facts",
+    "American facts",
+    "did you know",
+    "interesting facts",
+    "USA Dose",
+    "shorts",
+]
+
+
+request_body = {
+    "snippet": {
+        "title": title,
+        "description": description,
+        "tags": tags,
+        "categoryId": "25",
+        "defaultLanguage": "en",
     },
     "status": {
-        "privacyStatus": "private",
-        "selfDeclaredMadeForKids": False
-    }
+        "privacyStatus": "public",
+        "selfDeclaredMadeForKids": False,
+    },
 }
+
 
 media = MediaFileUpload(
     VIDEO_FILE,
     mimetype="video/mp4",
-    resumable=True
+    resumable=True,
 )
 
-print("Starting YouTube upload...")
 
 request = youtube.videos().insert(
     part="snippet,status",
-    body=body,
-    media_body=media
+    body=request_body,
+    media_body=media,
 )
 
-response = None
 
-while response is None:
-    status, response = request.next_chunk()
+print("Uploading...")
 
-    if status:
-        progress = int(status.progress() * 100)
-        print(f"Upload progress: {progress}%")
+response = request.execute()
 
-video_id = response["id"]
+video_id = response.get("id")
 
+if not video_id:
+    print("ERROR: YouTube did not return a video ID")
+    sys.exit(1)
+
+
+print("")
 print("================================")
-print("YOUTUBE UPLOAD SUCCESSFUL")
+print("YOUTUBE UPLOAD SUCCESS")
 print("================================")
-print(f"Video ID: {video_id}")
-print(f"https://www.youtube.com/watch?v={video_id}")
-print("Privacy: PRIVATE")
+print("Video ID:", video_id)
+print("Privacy: PUBLIC")
 print("================================")
+print("Video uploaded successfully.")
+print("================================")
+```
