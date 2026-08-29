@@ -1,4 +1,3 @@
-```python
 import os
 import sys
 import requests
@@ -81,4 +80,3 @@ if found == 0:
     print("No female American voice was found.")
     print()
     print("The account may not have any Free API voice available.")
-```
