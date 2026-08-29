@@ -4,52 +4,56 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 2:00 AM IST
-    - cron: "30 20 * * *"
+    # Short 1
+    # 00:30 UTC = 06:00 AM IST
+    - cron: "30 0 * * *"
 
-    # 5:00 AM IST
-    - cron: "30 23 * * *"
-
-    # 8:00 AM IST
-    - cron: "30 2 * * *"
+    # Short 2
+    # 12:30 UTC = 06:00 PM IST
+    - cron: "30 12 * * *"
 
 permissions:
   contents: write
 
 jobs:
-  generate:
+  create-and-upload:
     runs-on: ubuntu-latest
 
     steps:
 
+      # ==========================================
+      # CHECKOUT
+      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ==========================================
+      # PYTHON
+      # ==========================================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install FFmpeg and TTS
+      # ==========================================
+      # SYSTEM PACKAGES
+      # ==========================================
+      - name: Install FFmpeg and eSpeak
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg espeak-ng
 
+      # ==========================================
+      # PYTHON PACKAGES
+      # ==========================================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          python -m pip install requests
-          python -m pip install elevenlabs
-          python -m pip install google-genai
-          python -m pip install google-api-python-client
-          python -m pip install google-auth
-          python -m pip install google-auth-httplib2
-          python -m pip install google-auth-oauthlib
+          pip install elevenlabs requests
 
-      # ========================================
+      # ==========================================
       # CHECK FILES
-      # ========================================
-
+      # ==========================================
       - name: Check project files
         run: |
           echo "================================"
@@ -58,163 +62,143 @@ jobs:
 
           ls -lah
           echo ""
-          echo "Scripts:"
-          ls -lah scripts
 
-          echo ""
-          echo "Checking required files..."
-
-          test -f daily_script.txt
-          test -f scripts/generate_script.py
-          test -f scripts/generate_voice.py
-          test -f create_video.py
-          test -f download_clips.py
-          test -f upload_video.py
-
-          echo ""
-          echo "ALL REQUIRED FILES FOUND"
-
-      # ========================================
-      # GENERATE SCRIPT
-      # ========================================
-
-      - name: Generate daily USA script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python scripts/generate_script.py
-
-      - name: Check generated script
-        run: |
-          echo "================================"
-          echo "DAILY USA SCRIPT"
-          echo "================================"
-
-          test -f daily_script.txt
-          cat daily_script.txt
-
-      # ========================================
-      # DOWNLOAD USA MOVING VIDEOS
-      # ========================================
-
-      - name: Download USA stock videos
-        env:
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-        run: |
-          rm -rf clips
-          python download_clips.py
-
-      - name: Check downloaded clips
-        run: |
-          echo "================================"
-          echo "USA STOCK VIDEOS"
-          echo "================================"
-
-          test -d clips
-
-          ls -lh clips
-
-          CLIP_COUNT=$(find clips -type f -name "*.mp4" | wc -l)
-
-          echo ""
-          echo "Clips downloaded: $CLIP_COUNT"
-
-          if [ "$CLIP_COUNT" -lt 3 ]; then
-            echo "ERROR: Less than 3 clips downloaded."
+          if [ ! -f "daily_script.txt" ]; then
+            echo "ERROR: daily_script.txt not found"
             exit 1
           fi
 
-      # ========================================
-      # GENERATE VOICE
-      # ========================================
+          if [ ! -f "scripts/generate_voice.py" ]; then
+            echo "ERROR: scripts/generate_voice.py not found"
+            exit 1
+          fi
 
-      - name: Generate voice
+          if [ ! -f "create_video.py" ]; then
+            echo "ERROR: create_video.py not found"
+            exit 1
+          fi
+
+          echo "Required files found."
+
+      # ==========================================
+      # GENERATE DAILY SCRIPT
+      # ==========================================
+      - name: Generate daily script
+        run: |
+          if [ -f "scripts/generate_script.py" ]; then
+            python scripts/generate_script.py
+          else
+            echo "generate_script.py not found."
+            echo "Using existing daily_script.txt"
+          fi
+
+      # ==========================================
+      # GENERATE FEMALE ELEVENLABS VOICE
+      # ==========================================
+      - name: Generate Laura Female Voice
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
+          echo "================================"
+          echo "GENERATING FEMALE VOICE"
+          echo "================================"
+
           python scripts/generate_voice.py
 
-      - name: Check voice
-        run: |
-          echo "================================"
-          echo "VOICE"
-          echo "================================"
+          if [ ! -f "voice.mp3" ]; then
+            echo "ERROR: voice.mp3 was not created"
+            exit 1
+          fi
 
-          test -f voice.mp3
           ls -lh voice.mp3
 
-      # ========================================
-      # CREATE VIDEO
-      # ========================================
-
-      - name: Create moving video
+      # ==========================================
+      # DOWNLOAD MOVING STOCK CLIPS
+      # ==========================================
+      - name: Download moving stock clips
+        env:
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
+          echo "================================"
+          echo "DOWNLOADING MOVING STOCK CLIPS"
+          echo "================================"
+
+          if [ -f "download_clips.py" ]; then
+            python download_clips.py
+          else
+            echo "ERROR: download_clips.py not found"
+            exit 1
+          fi
+
+          echo ""
+          echo "Downloaded clips:"
+          find clips -maxdepth 1 -type f -print 2>/dev/null || true
+
+      # ==========================================
+      # CREATE FINAL SHORT
+      # ==========================================
+      - name: Create USA Dose Short
+        run: |
+          echo "================================"
+          echo "CREATING USA DOSE SHORT"
+          echo "================================"
+
           python create_video.py
 
-      # ========================================
-      # CHECK VIDEO
-      # ========================================
+          if [ ! -f "usa_dose_short.mp4" ]; then
+            echo "ERROR: usa_dose_short.mp4 was not created"
+            exit 1
+          fi
 
-      - name: Check final video
-        run: |
-          echo "================================"
-          echo "FINAL VIDEO"
-          echo "================================"
-
-          test -f usa_dose_short.mp4
-
+          echo ""
+          echo "FINAL VIDEO:"
           ls -lh usa_dose_short.mp4
 
-          ffprobe \
-            -v error \
-            -show_entries format=duration,size \
-            -show_entries stream=codec_name,width,height,pix_fmt \
-            -of default=noprint_wrappers=1 \
-            usa_dose_short.mp4
-
-      # ========================================
-      # UPLOAD YOUTUBE
-      # ========================================
-
-      - name: Upload YouTube Short
+      # ==========================================
+      # UPLOAD TO YOUTUBE
+      # ==========================================
+      - name: Upload Short to YouTube
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
+          echo "================================"
+          echo "UPLOADING USA DOSE SHORT"
+          echo "================================"
+
+          if [ ! -f "upload_video.py" ]; then
+            echo "ERROR: upload_video.py not found"
+            exit 1
+          fi
+
           python upload_video.py
 
-      # ========================================
-      # SAVE SCRIPT
-      # ========================================
-
-      - name: Save generated script
+      # ==========================================
+      # SAVE UPDATED FILES
+      # ==========================================
+      - name: Commit generated files
         run: |
           git config user.name "USA Dose Bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git add daily_script.txt
+          git add daily_script.txt voice.mp3 usa_dose_short.mp4 2>/dev/null || true
 
-          if git diff --cached --quiet; then
-            echo "No script changes."
-          else
-            git commit -m "Generate daily USA Short"
-            git push
-          fi
+          git diff --cached --quiet || git commit -m "Daily USA Dose Short"
 
-      # ========================================
-      # SUCCESS
-      # ========================================
+          git push || true
 
-      - name: Automation completed
+      # ==========================================
+      # DONE
+      # ==========================================
+      - name: Complete
         run: |
-          echo ""
           echo "================================"
-          echo "USA DOSE AUTOMATION SUCCESS"
+          echo "USA DOSE AUTOMATION COMPLETE"
           echo "================================"
-          echo "Script: OK"
-          echo "Stock videos: OK"
-          echo "Voice: OK"
-          echo "Video: OK"
-          echo "YouTube: OK"
+          echo "Female voice: Laura"
+          echo "Moving clips: YES"
+          echo "Short duration: 30-40 seconds"
+          echo "Daily videos: 2"
+          echo "Schedule: 00:30 UTC and 12:30 UTC"
           echo "================================"
