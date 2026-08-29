@@ -40,14 +40,20 @@ if not text:
     print("ERROR: daily_script.txt is empty")
     sys.exit(1)
 
+# ==========================================
+# FIND CLIPS
+# ==========================================
+
 clips = []
 
 for filename in os.listdir(CLIPS_DIR):
-    if filename.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+    if filename.lower().endswith(
+        (".mp4", ".mov", ".mkv", ".webm")
+    ):
         clips.append(os.path.join(CLIPS_DIR, filename))
 
 if len(clips) < 3:
-    print("ERROR: At least 3 clips are required.")
+    print("ERROR: At least 3 video clips are required.")
     sys.exit(1)
 
 print("Voice:", VOICE)
@@ -72,21 +78,22 @@ probe = subprocess.run(
 try:
     voice_duration = float(probe.stdout.strip())
 except:
-    print("ERROR: Could not read voice duration")
+    print("ERROR: Could not detect voice duration")
     sys.exit(1)
 
-# Maximum 40 seconds
-TARGET_DURATION = min(40.0, voice_duration)
-
-# Minimum target 30 seconds
-if TARGET_DURATION < 30:
+# Keep Shorts between 30 and 40 seconds
+if voice_duration > 40:
+    TARGET_DURATION = 40.0
+elif voice_duration >= 30:
+    TARGET_DURATION = voice_duration
+else:
     TARGET_DURATION = voice_duration
 
 print("Voice duration:", round(voice_duration, 2))
 print("Target duration:", round(TARGET_DURATION, 2))
 
 # ==========================================
-# CLEAN WORK DIRECTORY
+# CLEAN OLD PARTS
 # ==========================================
 
 if os.path.exists(WORK_DIR):
@@ -98,27 +105,28 @@ if os.path.exists(WORK_DIR):
 os.makedirs(WORK_DIR, exist_ok=True)
 
 # ==========================================
-# RANDOM CLIPS
+# SELECT 5 RANDOM CLIPS
 # ==========================================
 
 random.shuffle(clips)
-clips = clips[:5]
+
+selected_clips = clips[:5]
 
 print()
 print("Selected clips:")
 
-for clip in clips:
+for clip in selected_clips:
     print("-", clip)
 
 # ==========================================
 # CREATE CLIP PARTS
 # ==========================================
 
-clip_duration = TARGET_DURATION / len(clips)
+clip_duration = TARGET_DURATION / len(selected_clips)
 
 parts = []
 
-for index, clip in enumerate(clips):
+for index, clip in enumerate(selected_clips):
 
     part = os.path.join(
         WORK_DIR,
@@ -155,7 +163,6 @@ for index, clip in enumerate(clips):
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "21",
-
         "-pix_fmt", "yuv420p",
 
         "-movflags", "+faststart",
@@ -175,7 +182,7 @@ for index, clip in enumerate(clips):
         sys.exit(1)
 
     if not os.path.exists(part):
-        print("ERROR: Clip part not created")
+        print("ERROR: Clip was not created")
         sys.exit(1)
 
     parts.append(part)
@@ -193,24 +200,23 @@ with open(concat_file, "w", encoding="utf-8") as f:
 
     for part in parts:
 
-        path = os.path.abspath(part)
+        absolute_path = os.path.abspath(part)
 
         f.write(
             "file '" +
-            path.replace("'", "'\\''") +
+            absolute_path.replace("'", "'\\''") +
             "'\n"
         )
 
 # ==========================================
-# CAPTION TEXT
+# PREPARE CAPTION
 # ==========================================
 
 caption = " ".join(text.split())
 
-if len(caption) > 900:
-    caption = caption[:900] + "..."
+if len(caption) > 850:
+    caption = caption[:850] + "..."
 
-# FFmpeg escaping
 caption = (
     caption
     .replace("\\", "\\\\")
@@ -233,12 +239,7 @@ print("Adding voice...")
 print("Adding captions...")
 print("================================")
 
-# IMPORTANT:
-# No text_align option.
-# This avoids the FFmpeg error you received.
-
-filter_complex = (
-    "[0:v]"
+video_filter = (
     "drawtext="
     "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
     "text='USA DOSE':"
@@ -254,14 +255,13 @@ filter_complex = (
     "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:"
     f"text='{caption}':"
     "fontcolor=white:"
-    "fontsize=42:"
-    "line_spacing=12:"
-    "x=(w-text_w)/2:"
+    "fontsize=40:"
+    "line_spacing=10:"
+    "x=70:"
     "y=h-650:"
     "box=1:"
     "boxcolor=black@0.68:"
     "boxborderw=28"
-    "[v]"
 )
 
 command = [
@@ -274,10 +274,9 @@ command = [
 
     "-i", VOICE,
 
-    "-filter_complex",
-    filter_complex,
+    "-vf", video_filter,
 
-    "-map", "[v]",
+    "-map", "0:v:0",
     "-map", "1:a:0",
 
     "-t", str(TARGET_DURATION),
@@ -309,6 +308,7 @@ result = subprocess.run(
 )
 
 if result.returncode != 0:
+
     print()
     print("================================")
     print("FINAL VIDEO ERROR")
@@ -317,17 +317,17 @@ if result.returncode != 0:
     sys.exit(1)
 
 # ==========================================
-# VERIFY
+# VERIFY VIDEO
 # ==========================================
 
 if not os.path.exists(OUTPUT):
     print("ERROR: Final video was not created")
     sys.exit(1)
 
-size = os.path.getsize(OUTPUT)
+file_size = os.path.getsize(OUTPUT)
 
-if size < 100000:
-    print("ERROR: Video file is too small")
+if file_size < 100000:
+    print("ERROR: Final video file is too small")
     sys.exit(1)
 
 print()
@@ -356,5 +356,6 @@ print("================================")
 print("VIDEO SUCCESS!")
 print("================================")
 print("Created:", OUTPUT)
-print("Moving clips:", len(clips))
+print("Moving clips:", len(selected_clips))
+print("Duration:", round(TARGET_DURATION, 2), "seconds")
 print("================================")
