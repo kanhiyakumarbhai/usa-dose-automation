@@ -1,38 +1,24 @@
-name: USA Dose Daily Automation
+[Visual: Fast-paced montage of a glowing green island, massive crowds, and a giant copper statue, quickly zooming into the state of New York.]
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "30 13 * * *"
+[Audio/Voiceover (Energetic and fast-paced):]
+Did you know the entire island of Manhattan was once bought for the equivalent of just twenty-four dollars?
 
-permissions:
-  contents: write
+[Visual: Graphic showing a stack of old Dutch guilder coins transforming into a modern map of Manhattan skyscrapers.]
 
-jobs:
-  generate:
-    runs-on: ubuntu-latest
+[Audio/Voiceover:]
+In sixteen-twenty-six, Peter Minuit, a director for the Dutch West India Company, made a deal with the local Lenape Native Americans. 
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+[Visual: Archival-style painting of colonial-era trade, then quick cuts to Wall Street and Central Park.]
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+[Audio/Voiceover:]
+For trade goods like woven cloth, brass kettles, and farming tools valued at sixty guilders—roughly twenty-four dollars at the time—the Dutch claimed the island. 
 
-      - name: Install Gemini SDK
-        run: pip install -U google-genai
+[Visual: Split screen comparing old colonial maps with a vibrant, modern drone shot of the New York City skyline.]
 
-      - name: Generate AI USA Short Script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python scripts/generate_script.py
+[Audio/Voiceover:]
+Of course, that land is now worth hundreds of billions of dollars, making it arguably the best real estate investment in human history. 
 
-      - name: Save generated script
-        run: |
-          git config user.name "USA Dose Bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add daily_script.txt
-          git diff --cached --quiet || git commit -m "Generate AI USA script"
-          git push
+[Visual: Bold text on screen: USA DOSE]
+
+[Audio/Voiceover:]
+Hit subscribe for your daily dose of American history.
