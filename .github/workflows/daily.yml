@@ -5,13 +5,29 @@ on:
   schedule:
     - cron: "30 13 * * *"
 
+permissions:
+  contents: write
+
 jobs:
-  test:
+  generate:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test Automation
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate USA Short Script
+        run: python scripts/generate_script.py
+
+      - name: Save generated script
         run: |
-          echo "🇺🇸 USA Dose Automation Started!"
-          echo "🎬 Daily Short workflow is working!"
-          date
+          git config user.name "USA Dose Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add daily_script.txt
+          git diff --cached --quiet || git commit -m "Generate daily USA script"
+          git push
