@@ -1,408 +1,365 @@
-name: USA Dose Daily Automation
+import os
+import sys
+import re
 
-on:
-  workflow_dispatch:
+from elevenlabs.client import ElevenLabs
 
-  schedule:
-    # 2 Shorts every day
-    # 00:30 UTC = 06:00 AM IST
-    - cron: "30 0 * * *"
 
-    # 12:30 UTC = 06:00 PM IST
-    - cron: "30 12 * * *"
+VOICE_NAME = "Laura"
+VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
+MODEL_ID = "eleven_multilingual_v2"
 
-permissions:
-  contents: write
+SCRIPT_FILE = "daily_script.txt"
+OUTPUT_FILE = "voice.mp3"
 
+MAX_CHARACTERS = 350
+MIN_WORDS = 40
+MAX_WORDS = 55
 
-jobs:
 
-  create-and-upload:
+def get_api_keys():
 
-    runs-on: ubuntu-latest
+    keys = []
 
-    steps:
+    for i in range(1, 6):
 
-      # ==================================================
-      # CHECKOUT
-      # ==================================================
+        key = os.getenv(
+            f"ELEVENLABS_API_KEY_{i}"
+        )
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+        if key:
+            key = key.strip()
 
+            if key:
+                keys.append(
+                    (i, key)
+                )
 
-      # ==================================================
-      # PYTHON
-      # ==================================================
+    # Old secret support
+    if not keys:
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+        old_key = os.getenv(
+            "ELEVENLABS_API_KEY"
+        )
 
-        with:
-          python-version: "3.12"
+        if old_key:
+            keys.append(
+                (1, old_key.strip())
+            )
 
+    return keys
 
-      # ==================================================
-      # SYSTEM PACKAGES
-      # ==================================================
 
-      - name: Install FFmpeg and eSpeak
-        run: |
+def clean_text(text):
 
-          sudo apt-get update
+    forbidden = [
+        "voice over",
+        "voice-over",
+        "voiceover",
+        "narration",
+        "narrator",
+        "production",
+        "on screen",
+        "visual",
+        "caption",
+        "subtitle",
+        "scene:",
+        "script:",
+    ]
 
-          sudo apt-get install -y \
-            ffmpeg \
-            espeak-ng
+    for phrase in forbidden:
 
+        text = re.sub(
+            re.escape(phrase),
+            "",
+            text,
+            flags=re.IGNORECASE
+        )
 
-      # ==================================================
-      # PYTHON PACKAGES
-      # ==================================================
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
-      - name: Install Python packages
-        run: |
+    return text.strip()
 
-          python -m pip install --upgrade pip
 
-          pip install elevenlabs
-          pip install requests
-          pip install google-genai
+def main():
 
-          pip install google-api-python-client
-          pip install google-auth
-          pip install google-auth-oauthlib
-          pip install google-auth-httplib2
+    print("================================")
+    print("USA DOSE FEMALE VOICE")
+    print("================================")
+    print(f"Voice: {VOICE_NAME}")
+    print(f"Voice ID: {VOICE_ID}")
+    print(f"Model: {MODEL_ID}")
+    print("================================")
 
+    api_keys = get_api_keys()
 
-      # ==================================================
-      # CHECK PROJECT FILES
-      # ==================================================
+    print(
+        f"API keys available: {len(api_keys)}"
+    )
 
-      - name: Check project files
-        run: |
+    if not api_keys:
 
-          echo "================================"
-          echo "PROJECT FILES"
-          echo "================================"
+        print("")
+        print(
+            "ERROR: No ElevenLabs API keys found."
+        )
 
-          ls -lah
+        sys.exit(1)
 
-          echo ""
-          echo "Scripts:"
-          ls -lah scripts || true
+    if not os.path.isfile(
+        SCRIPT_FILE
+    ):
 
-          echo ""
+        print(
+            "ERROR: daily_script.txt not found."
+        )
 
-          if [ ! -f "scripts/generate_script.py" ]; then
-            echo "ERROR: scripts/generate_script.py not found"
-            exit 1
-          fi
+        sys.exit(1)
 
-          if [ ! -f "scripts/generate_voice.py" ]; then
-            echo "ERROR: scripts/generate_voice.py not found"
-            exit 1
-          fi
+    with open(
+        SCRIPT_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
 
-          if [ ! -f "create_video.py" ]; then
-            echo "ERROR: create_video.py not found"
-            exit 1
-          fi
+        text = f.read().strip()
 
-          if [ ! -f "download_clips.py" ]; then
-            echo "ERROR: download_clips.py not found"
-            exit 1
-          fi
+    if not text:
 
-          if [ ! -f "upload_video.py" ]; then
-            echo "ERROR: upload_video.py not found"
-            exit 1
-          fi
+        print(
+            "ERROR: daily_script.txt is empty."
+        )
 
-          echo ""
-          echo "All required files found."
+        sys.exit(1)
 
+    text = clean_text(text)
 
-      # ==================================================
-      # GENERATE DAILY SCRIPT
-      # ==================================================
+    word_count = len(
+        text.split()
+    )
 
-      - name: Generate daily USA Dose script
+    character_count = len(text)
 
-        env:
+    print("")
+    print("================================")
+    print("SCRIPT CHECK")
+    print("================================")
+    print(
+        f"Words: {word_count}"
+    )
+    print(
+        f"Characters: {character_count}"
+    )
+    print("================================")
 
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    if word_count < MIN_WORDS:
 
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        print(
+            f"ERROR: Script is too short."
+        )
 
-        run: |
+        print(
+            f"Minimum words: {MIN_WORDS}"
+        )
 
-          echo "================================"
-          echo "GENERATING DAILY SCRIPT"
-          echo "================================"
+        sys.exit(1)
 
-          python scripts/generate_script.py
+    if word_count > MAX_WORDS:
 
-          if [ ! -s "daily_script.txt" ]; then
-            echo "ERROR: daily_script.txt is empty"
-            exit 1
-          fi
+        print(
+            f"ERROR: Script is too long."
+        )
 
-          if [ ! -s "video_title.txt" ]; then
-            echo "ERROR: video_title.txt is empty"
-            exit 1
-          fi
+        print(
+            f"Maximum words: {MAX_WORDS}"
+        )
 
-          if [ ! -s "video_hashtags.txt" ]; then
-            echo "ERROR: video_hashtags.txt is empty"
-            exit 1
-          fi
+        sys.exit(1)
 
-          echo ""
-          echo "SCRIPT GENERATED"
-
-          echo ""
-          echo "SCRIPT:"
-          cat daily_script.txt
-
-          echo ""
-          echo "TITLE:"
-          cat video_title.txt
-
-          echo ""
-          echo "HASHTAGS:"
-          cat video_hashtags.txt
-
-
-      # ==================================================
-      # GENERATE LAURA FEMALE VOICE
-      # ==================================================
-
-      - name: Generate Laura Female Voice
-
-        env:
-
-          # IMPORTANT:
-          # Multi-key failover
-
-          ELEVENLABS_API_KEY_1: ${{ secrets.ELEVENLABS_API_KEY }}
-
-          ELEVENLABS_API_KEY_2: ${{ secrets.ELEVENLABS_API_KEY_2 }}
-
-          ELEVENLABS_API_KEY_3: ${{ secrets.ELEVENLABS_API_KEY_3 }}
-
-          ELEVENLABS_API_KEY_4: ${{ secrets.ELEVENLABS_API_KEY_4 }}
-
-          ELEVENLABS_API_KEY_5: ${{ secrets.ELEVENLABS_API_KEY_5 }}
-
-        run: |
-
-          echo "================================"
-          echo "GENERATING FEMALE VOICE"
-          echo "================================"
-
-          python scripts/generate_voice.py
-
-          if [ ! -f "voice.mp3" ]; then
-
-            echo ""
-            echo "ERROR: voice.mp3 was not created"
-
-            exit 1
-
-          fi
-
-          echo ""
-          echo "VOICE CREATED"
-
-          ls -lh voice.mp3
-
-
-      # ==================================================
-      # DOWNLOAD MOVING STOCK CLIPS
-      # ==================================================
-
-      - name: Download moving stock clips
-
-        env:
-
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-
-        run: |
-
-          echo "================================"
-          echo "DOWNLOADING MOVING STOCK CLIPS"
-          echo "================================"
-
-          rm -rf clips
-
-          mkdir -p clips
-
-          python download_clips.py
-
-          echo ""
-          echo "DOWNLOADED CLIPS:"
-
-          find clips \
-            -maxdepth 1 \
-            -type f \
-            -print || true
-
-          CLIP_COUNT=$(
-            find clips \
-            -maxdepth 1 \
-            -type f \
-            \( \
-              -name "*.mp4" \
-              -o \
-              -name "*.mov" \
-            \) \
-            | wc -l
-          )
-
-          echo ""
-          echo "Clip count: $CLIP_COUNT"
-
-          if [ "$CLIP_COUNT" -lt 1 ]; then
-
-            echo ""
-            echo "ERROR: No moving video clips downloaded"
-
-            exit 1
-
-          fi
-
-
-      # ==================================================
-      # CREATE HD VIDEO
-      # ==================================================
-
-      - name: Create USA Dose Short
-
-        run: |
-
-          echo "================================"
-          echo "CREATING USA DOSE SHORT"
-          echo "================================"
-
-          python create_video.py
-
-          if [ ! -f "usa_dose_short.mp4" ]; then
-
-            echo ""
-            echo "ERROR: usa_dose_short.mp4 was not created"
-
-            exit 1
-
-          fi
-
-          echo ""
-          echo "FINAL VIDEO CREATED:"
-
-          ls -lh usa_dose_short.mp4
-
-          echo ""
-          echo "VIDEO INFORMATION:"
-
-          ffprobe \
-            -v error \
-            -select_streams v:0 \
-            -show_entries stream=codec_name,width,height,r_frame_rate \
-            -of default=noprint_wrappers=1 \
-            usa_dose_short.mp4 || true
-
-
-      # ==================================================
-      # UPLOAD TO YOUTUBE
-      # ==================================================
-
-      - name: Upload Short to YouTube
-
-        env:
-
-          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-
-        run: |
-
-          echo "================================"
-          echo "UPLOADING SHORT TO YOUTUBE"
-          echo "================================"
-
-          python upload_video.py
-
-
-      # ==================================================
-      # SAVE GENERATED FILES
-      # ==================================================
-
-      - name: Save generated files
-
-        run: |
-
-          git config user.name "USA Dose Bot"
-
-          git config user.email \
-            "actions@users.noreply.github.com"
-
-          git add \
-            daily_script.txt \
-            video_title.txt \
-            video_hashtags.txt \
-            voice.mp3 \
-            usa_dose_short.mp4
-
-          if git diff --cached --quiet; then
-
-            echo ""
-            echo "No changes to commit."
-
-          else
-
-            git commit \
-              -m "Daily USA Dose Short"
-
-            git push
-
-          fi
-
-
-      # ==================================================
-      # COMPLETE
-      # ==================================================
-
-      - name: Automation complete
-
-        run: |
-
-          echo ""
-          echo "================================"
-          echo "USA DOSE AUTOMATION COMPLETE"
-          echo "================================"
-
-          echo "Daily Shorts: 2"
-
-          echo "Voice: Laura"
-
-          echo "Voice: Female"
-
-          echo "Accent: American"
-
-          echo "HD: 1080x1920"
-
-          echo "Moving clips: YES"
-
-          echo "Captions: YES"
-
-          echo "Unique title: YES"
-
-          echo "Hashtags: 7+"
-
-          echo "YouTube: PRIVATE"
-
-          echo "Multi API failover: ACTIVE"
-
-          echo "================================"
+    print("")
+    print("================================")
+    print("ELEVENLABS QUOTA PROTECTION")
+    print("================================")
+    print(
+        f"Characters required: {character_count}"
+    )
+    print(
+        f"Maximum allowed: {MAX_CHARACTERS}"
+    )
+    print("================================")
+
+    if character_count > MAX_CHARACTERS:
+
+        print("")
+        print(
+            "ERROR: Script exceeds the "
+            "ElevenLabs safety limit."
+        )
+
+        print(
+            "Voice generation cancelled."
+        )
+
+        sys.exit(1)
+
+    # Remove old file
+    if os.path.isfile(
+        OUTPUT_FILE
+    ):
+
+        os.remove(
+            OUTPUT_FILE
+        )
+
+    # ======================================================
+    # MULTI KEY FAILOVER
+    # ======================================================
+
+    for key_number, api_key in api_keys:
+
+        print("")
+        print("================================")
+        print(
+            f"TRYING ELEVENLABS API KEY {key_number}"
+        )
+        print("================================")
+
+        try:
+
+            client = ElevenLabs(
+                api_key=api_key
+            )
+
+            print("")
+            print(
+                "Generating Laura female voice..."
+            )
+
+            audio = client.text_to_speech.convert(
+                voice_id=VOICE_ID,
+                model_id=MODEL_ID,
+                text=text,
+                output_format="mp3_44100_128",
+            )
+
+            with open(
+                OUTPUT_FILE,
+                "wb"
+            ) as f:
+
+                for chunk in audio:
+
+                    if chunk:
+                        f.write(chunk)
+
+            if not os.path.isfile(
+                OUTPUT_FILE
+            ):
+
+                raise RuntimeError(
+                    "voice.mp3 was not created."
+                )
+
+            file_size = os.path.getsize(
+                OUTPUT_FILE
+            )
+
+            if file_size <= 0:
+
+                raise RuntimeError(
+                    "voice.mp3 is empty."
+                )
+
+            print("")
+            print("================================")
+            print("VOICE CREATED SUCCESSFULLY")
+            print("================================")
+            print(
+                f"API Key used: {key_number}"
+            )
+            print(
+                f"Voice: {VOICE_NAME}"
+            )
+            print(
+                f"Words: {word_count}"
+            )
+            print(
+                f"Characters: {character_count}"
+            )
+            print(
+                f"Output: {OUTPUT_FILE}"
+            )
+            print(
+                f"File size: {file_size} bytes"
+            )
+            print("================================")
+
+            return
+
+        except Exception as e:
+
+            error = str(e).lower()
+
+            print("")
+            print("================================")
+            print(
+                f"ELEVENLABS KEY {key_number} ERROR"
+            )
+            print("================================")
+            print(e)
+            print("================================")
+
+            quota_error = (
+                "quota" in error
+                or
+                "quota_exceeded" in error
+                or
+                "credits" in error
+                or
+                "credit" in error
+                or
+                "rate limit" in error
+                or
+                "too many requests" in error
+            )
+
+            if quota_error:
+
+                print(
+                    f"API KEY {key_number} "
+                    "HAS NO USABLE QUOTA."
+                )
+
+                print(
+                    "Trying next API key..."
+                )
+
+                continue
+
+            print(
+                "Trying next API key..."
+            )
+
+            continue
+
+    print("")
+    print("================================")
+    print("ALL ELEVENLABS KEYS FAILED")
+    print("================================")
+    print(
+        "No voice.mp3 was created."
+    )
+    print(
+        "Workflow stopped safely."
+    )
+    print("================================")
+
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
