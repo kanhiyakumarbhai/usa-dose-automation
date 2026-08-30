@@ -150,7 +150,7 @@ def main():
             "Add these GitHub Secrets:"
         )
         print(
-            "ELEVENLABS_API_KEY_1"
+            "ELEVENLABS_API_KEY"
         )
         print(
             "ELEVENLABS_API_KEY_2"
