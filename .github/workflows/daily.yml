@@ -1,15 +1,11 @@
+```yaml
 name: USA Dose Daily Automation
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Short 1
-    # 00:30 UTC = 06:00 AM IST
     - cron: "30 0 * * *"
-
-    # Short 2
-    # 12:30 UTC = 06:00 PM IST
     - cron: "30 12 * * *"
 
 permissions:
@@ -21,53 +17,25 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # CHECKOUT
-      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================================
-      # PYTHON
-      # ==========================================
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # ==========================================
-      # SYSTEM PACKAGES
-      # ==========================================
       - name: Install FFmpeg and eSpeak
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg espeak-ng
 
-      # ==========================================
-      # PYTHON PACKAGES
-      # ==========================================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
+          pip install elevenlabs requests google-genai
+          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
 
-          # ElevenLabs
-          pip install elevenlabs
-
-          # HTTP
-          pip install requests
-
-          # Google Gemini
-          pip install google-genai
-
-          # YouTube API
-          pip install google-api-python-client
-          pip install google-auth
-          pip install google-auth-oauthlib
-          pip install google-auth-httplib2
-
-      # ==========================================
-      # CHECK PROJECT FILES
-      # ==========================================
       - name: Check project files
         run: |
           echo "================================"
@@ -75,48 +43,18 @@ jobs:
           echo "================================"
 
           ls -lah
-
           echo ""
-          echo "Scripts:"
           ls -lah scripts || true
 
-          echo ""
-
-          if [ ! -f "daily_script.txt" ]; then
-            echo "ERROR: daily_script.txt not found"
-            exit 1
-          fi
-
-          if [ ! -f "scripts/generate_script.py" ]; then
-            echo "ERROR: scripts/generate_script.py not found"
-            exit 1
-          fi
-
-          if [ ! -f "scripts/generate_voice.py" ]; then
-            echo "ERROR: scripts/generate_voice.py not found"
-            exit 1
-          fi
-
-          if [ ! -f "create_video.py" ]; then
-            echo "ERROR: create_video.py not found"
-            exit 1
-          fi
-
-          if [ ! -f "download_clips.py" ]; then
-            echo "ERROR: download_clips.py not found"
-            exit 1
-          fi
-
-          if [ ! -f "upload_video.py" ]; then
-            echo "ERROR: upload_video.py not found"
-            exit 1
-          fi
+          test -f daily_script.txt || exit 1
+          test -f scripts/generate_script.py || exit 1
+          test -f scripts/generate_voice.py || exit 1
+          test -f create_video.py || exit 1
+          test -f download_clips.py || exit 1
+          test -f upload_video.py || exit 1
 
           echo "All required files found."
 
-      # ==========================================
-      # GENERATE DAILY SCRIPT
-      # ==========================================
       - name: Generate daily USA Dose script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -128,41 +66,26 @@ jobs:
 
           python scripts/generate_script.py
 
-          if [ ! -s "daily_script.txt" ]; then
-            echo "ERROR: daily_script.txt is empty"
-            exit 1
-          fi
+          test -s daily_script.txt
 
-          echo ""
           echo "SCRIPT GENERATED"
-          echo "Characters:"
           wc -c daily_script.txt
 
-      # ==========================================
-      # GENERATE FEMALE ELEVENLABS VOICE
-      # ==========================================
-      - name: Generate Laura Female Voice
+      - name: Generate female voice
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
         run: |
           echo "================================"
-          echo "GENERATING ELEVENLABS FEMALE VOICE"
+          echo "GENERATING FEMALE VOICE"
           echo "================================"
 
           python scripts/generate_voice.py
 
-          if [ ! -f "voice.mp3" ]; then
-            echo "ERROR: voice.mp3 was not created"
-            exit 1
-          fi
+          test -f voice.mp3
+          test -s voice.mp3
 
-          echo ""
-          echo "VOICE CREATED"
           ls -lh voice.mp3
 
-      # ==========================================
-      # DOWNLOAD MOVING STOCK VIDEO CLIPS
-      # ==========================================
       - name: Download moving stock clips
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -176,23 +99,16 @@ jobs:
 
           python download_clips.py
 
-          echo ""
-          echo "DOWNLOADED CLIPS:"
-          find clips -maxdepth 1 -type f -print || true
+          CLIP_COUNT=$(find clips -maxdepth 1 -type f \
+            \( -name "*.mp4" -o -name "*.mov" \) | wc -l)
 
-          CLIP_COUNT=$(find clips -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.mov" \) | wc -l)
-
-          echo ""
           echo "Clip count: $CLIP_COUNT"
 
           if [ "$CLIP_COUNT" -lt 1 ]; then
-            echo "ERROR: No moving video clips were downloaded"
+            echo "ERROR: No video clips found"
             exit 1
           fi
 
-      # ==========================================
-      # CREATE FINAL VIDEO
-      # ==========================================
       - name: Create USA Dose Short
         run: |
           echo "================================"
@@ -202,16 +118,12 @@ jobs:
           python create_video.py
 
           if [ ! -f "usa_dose_short.mp4" ]; then
-            echo "ERROR: usa_dose_short.mp4 was not created"
+            echo "ERROR: Video was not created"
             exit 1
           fi
 
-          echo ""
-          echo "FINAL VIDEO CREATED:"
+          echo "FINAL VIDEO:"
           ls -lh usa_dose_short.mp4
-
-          echo ""
-          echo "VIDEO INFORMATION:"
 
           ffprobe \
             -v error \
@@ -220,24 +132,31 @@ jobs:
             -of default=noprint_wrappers=1 \
             usa_dose_short.mp4 || true
 
-      # ==========================================
-      # UPLOAD TO YOUTUBE
-      # ==========================================
-      - name: Upload Short to YouTube
+      - name: Upload Short to YouTube - PRIVATE ONLY
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+
+          # IMPORTANT:
+          # Video will NOT be published automatically.
+          # upload_video.py must use privacyStatus = private.
+          YOUTUBE_PRIVACY_STATUS: private
+
         run: |
           echo "================================"
-          echo "UPLOADING SHORT TO YOUTUBE"
+          echo "UPLOADING SHORT - PRIVATE"
           echo "================================"
 
           python upload_video.py
 
-      # ==========================================
-      # SAVE GENERATED FILES
-      # ==========================================
+          echo ""
+          echo "================================"
+          echo "UPLOAD COMPLETE"
+          echo "VIDEO IS PRIVATE"
+          echo "AUTOMATIC PUBLIC PUBLISHING IS OFF"
+          echo "================================"
+
       - name: Save generated files
         run: |
           git config user.name "USA Dose Bot"
@@ -248,25 +167,21 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "Daily USA Dose Short"
+            git commit -m "Generate daily USA Dose video"
             git push
           fi
 
-      # ==========================================
-      # COMPLETE
-      # ==========================================
       - name: Automation complete
         run: |
           echo ""
           echo "================================"
           echo "USA DOSE AUTOMATION COMPLETE"
           echo "================================"
-          echo "Daily Shorts: 2"
-          echo "Voice: Laura"
+          echo "Video created: YES"
           echo "Voice: Female"
-          echo "Accent: American"
           echo "Moving clips: YES"
           echo "Captions: YES"
-          echo "Duration: 30-40 seconds"
-          echo "YouTube upload: YES"
+          echo "YouTube upload: PRIVATE"
+          echo "Automatic PUBLIC: OFF"
           echo "================================"
+```
