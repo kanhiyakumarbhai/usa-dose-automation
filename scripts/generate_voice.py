@@ -1,123 +1,91 @@
+```python
 import os
-import re
 import sys
+import re
 
-from google import genai
+from elevenlabs.client import ElevenLabs
 
 
 # ==========================================================
-# USA DOSE - DAILY SHORT SCRIPT GENERATOR
+# USA DOSE - ELEVENLABS MULTI-KEY FAILOVER
 # ==========================================================
+
+VOICE_NAME = "Laura"
+VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
+
+MODEL_ID = "eleven_multilingual_v2"
 
 SCRIPT_FILE = "daily_script.txt"
-TITLE_FILE = "video_title.txt"
-HASHTAGS_FILE = "video_hashtags.txt"
+OUTPUT_FILE = "voice.mp3"
 
-API_KEY = (
-    os.getenv("GEMINI_API_KEY")
-    or os.getenv("GOOGLE_API_KEY")
-)
+# ==========================================================
+# QUOTA PROTECTION
+# ==========================================================
 
-if not API_KEY:
-    print("ERROR: GEMINI_API_KEY / GOOGLE_API_KEY is missing.")
-    sys.exit(1)
-
-
-client = genai.Client(api_key=API_KEY)
+MAX_CHARACTERS = 350
+MIN_WORDS = 40
+MAX_WORDS = 60
 
 
 # ==========================================================
-# PROMPT
+# ELEVENLABS API KEYS
+# ==========================================================
+# GitHub Secrets:
+#
+# ELEVENLABS_API_KEY_1
+# ELEVENLABS_API_KEY_2
+# ELEVENLABS_API_KEY_3
+#
+# Add more keys if needed:
+# ELEVENLABS_API_KEY_4
+# ELEVENLABS_API_KEY_5
 # ==========================================================
 
-PROMPT = """
-You create original YouTube Shorts for a channel called USA Dose.
+def get_api_keys():
 
-Create ONE completely new and factual short video about the United States.
+    keys = []
 
-TOPIC:
-Choose an interesting US topic such as:
-- surprising American history
-- unusual US laws
-- amazing places
-- geography
-- inventions
-- science
-- American culture
-- strange but real facts
-- famous landmarks
-- unusual events
+    for i in range(1, 11):
 
-IMPORTANT:
-- The topic must be different from previous videos when possible.
-- Do not repeat the same fact.
-- Do not invent information.
-- Keep the information factual and easy to understand.
-- Target a US audience.
-- Use natural American English.
+        key = os.getenv(
+            f"ELEVENLABS_API_KEY_{i}"
+        )
 
-SCRIPT:
-- 40-55 spoken words.
-- Approximately 20-25 seconds.
-- Strong hook in the first sentence.
-- Interesting and engaging.
-- Natural conversational style.
-- End with a short question when appropriate.
-- The script must contain ONLY words that should be spoken.
+        if key:
+            key = key.strip()
 
-NEVER put these words or production labels inside the spoken script:
+            if key:
+                keys.append(
+                    (i, key)
+                )
 
-voice over
-voice-over
-voiceover
-narration
-narrator
-production
-script
-scene
-on screen
-visual
-caption
-subtitle
-AI
-camera direction
-music direction
+    # Backward compatibility:
+    # If only ELEVENLABS_API_KEY exists,
+    # use it as the first key.
 
-Do NOT write:
-"Voice Over:"
-"Narration:"
-"Scene:"
-"Script:"
-"On Screen:"
+    if not keys:
 
-TITLE:
-- Create one unique YouTube Shorts title.
-- The title must directly match the actual topic.
-- Make it interesting without misleading clickbait.
-- Do not reuse generic titles.
+        old_key = os.getenv(
+            "ELEVENLABS_API_KEY"
+        )
 
-HASHTAGS:
-- Minimum 7 hashtags.
-- Make hashtags directly related to the topic.
-- Always include #Shorts.
-- Do not use exactly the same hashtag list every time.
+        if old_key:
+            old_key = old_key.strip()
 
-OUTPUT EXACTLY IN THIS FORMAT:
+            if old_key:
+                keys.append(
+                    (1, old_key)
+                )
 
-TITLE: <title>
-
-HASHTAGS: <hashtag1> <hashtag2> <hashtag3> <hashtag4> <hashtag5> <hashtag6> <hashtag7>
-
-SCRIPT:
-<40-55 word spoken script>
-"""
+    return keys
 
 
 # ==========================================================
-# HELPERS
+# CLEAN SCRIPT
 # ==========================================================
 
-def clean_script(text):
+def clean_text(text):
+
     forbidden_patterns = [
         r"voice[\s_-]*over\s*:?",
         r"voiceover\s*:?",
@@ -132,6 +100,7 @@ def clean_script(text):
     ]
 
     for pattern in forbidden_patterns:
+
         text = re.sub(
             pattern,
             "",
@@ -148,42 +117,6 @@ def clean_script(text):
     return text.strip()
 
 
-def extract_section(text, section_name):
-    pattern = (
-        rf"{section_name}\s*:\s*"
-        rf"(.*?)(?=\n[A-Z][A-Z _-]*\s*:|$)"
-    )
-
-    match = re.search(
-        pattern,
-        text,
-        flags=re.IGNORECASE | re.DOTALL
-    )
-
-    if match:
-        return match.group(1).strip()
-
-    return ""
-
-
-def get_hashtags(text):
-    hashtags = re.findall(
-        r"#[A-Za-z0-9_]+",
-        text
-    )
-
-    # Remove duplicates while keeping order.
-    unique = []
-
-    for tag in hashtags:
-        if tag.lower() not in [
-            x.lower() for x in unique
-        ]:
-            unique.append(tag)
-
-    return unique
-
-
 # ==========================================================
 # MAIN
 # ==========================================================
@@ -191,162 +124,93 @@ def get_hashtags(text):
 def main():
 
     print("================================")
-    print("USA DOSE SCRIPT GENERATOR")
+    print("USA DOSE FEMALE VOICE")
     print("================================")
-    print("Model: Gemini 3.6 Flash")
-    print("Target: 40-55 words")
-    print("Target duration: 20-25 seconds")
+    print(f"Voice: {VOICE_NAME}")
+    print(f"Voice ID: {VOICE_ID}")
+    print(f"Model: {MODEL_ID}")
     print("================================")
 
     # ------------------------------------------------------
-    # GEMINI
+    # GET API KEYS
     # ------------------------------------------------------
 
-    try:
+    api_keys = get_api_keys()
 
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=PROMPT
-        )
-
-        result = response.text.strip()
-
-    except Exception as e:
+    if not api_keys:
 
         print("")
-        print("================================")
-        print("GEMINI ERROR")
-        print("================================")
-        print(e)
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # EXTRACT DATA
-    # ------------------------------------------------------
-
-    title = extract_section(
-        result,
-        "TITLE"
-    )
-
-    hashtags_raw = extract_section(
-        result,
-        "HASHTAGS"
-    )
-
-    script = extract_section(
-        result,
-        "SCRIPT"
-    )
-
-    title = clean_script(title)
-    script = clean_script(script)
-
-    hashtags = get_hashtags(
-        hashtags_raw
-    )
-
-    # ------------------------------------------------------
-    # VALIDATION
-    # ------------------------------------------------------
-
-    if not title:
-
-        print("ERROR: Title was not generated.")
-        sys.exit(1)
-
-    if not script:
-
-        print("ERROR: Script was not generated.")
-        sys.exit(1)
-
-    if len(hashtags) < 7:
-
+        print("ELEVENLABS ERROR")
+        print("")
         print(
-            "ERROR: Less than 7 hashtags generated."
+            "No ElevenLabs API keys found."
         )
+        print("")
+        print(
+            "Add these GitHub Secrets:"
+        )
+        print(
+            "ELEVENLABS_API_KEY_1"
+        )
+        print(
+            "ELEVENLABS_API_KEY_2"
+        )
+        print(
+            "ELEVENLABS_API_KEY_3"
+        )
+
         sys.exit(1)
 
-    word_count = len(
-        script.split()
+    print("")
+    print(
+        f"API keys available: {len(api_keys)}"
     )
 
-    character_count = len(script)
-
-    print("")
-    print("================================")
-    print("GENERATED CONTENT")
-    print("================================")
-
-    print("")
-    print("TITLE:")
-    print(title)
-
-    print("")
-    print("HASHTAGS:")
-    print(" ".join(hashtags))
-
-    print("")
-    print("SCRIPT:")
-    print(script)
-
-    print("")
-    print("================================")
-    print("SCRIPT CHECK")
-    print("================================")
-    print(f"Words: {word_count}")
-    print(f"Characters: {character_count}")
-    print("================================")
-
     # ------------------------------------------------------
-    # WORD LIMIT
+    # CHECK SCRIPT FILE
     # ------------------------------------------------------
 
-    if word_count < 40:
+    if not os.path.isfile(
+        SCRIPT_FILE
+    ):
 
         print("")
         print(
-            "ERROR: Script is too short."
+            "ERROR: daily_script.txt not found."
         )
-        print(
-            "Minimum: 40 words."
-        )
+
         sys.exit(1)
 
-    if word_count > 55:
+    with open(
+        SCRIPT_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
+        text = f.read().strip()
+
+    if not text:
 
         print("")
         print(
-            "ERROR: Script is too long."
+            "ERROR: daily_script.txt is empty."
         )
-        print(
-            "Maximum: 55 words."
-        )
-        print(
-            "Voice generation cancelled."
-        )
+
         sys.exit(1)
 
     # ------------------------------------------------------
-    # CHARACTER SAFETY
+    # CLEAN SCRIPT
     # ------------------------------------------------------
 
-    if character_count > 350:
-
-        print("")
-        print(
-            "ERROR: Script exceeds 350 characters."
-        )
-        print(
-            "Voice generation cancelled."
-        )
-        sys.exit(1)
+    text = clean_text(
+        text
+    )
 
     # ------------------------------------------------------
-    # FORBIDDEN TEXT CHECK
+    # CHECK FOR FORBIDDEN WORDS
     # ------------------------------------------------------
 
-    forbidden = [
+    forbidden_words = [
         "voice over",
         "voice-over",
         "voiceover",
@@ -357,90 +221,422 @@ def main():
         "visual",
         "caption",
         "subtitle",
-        "scene",
+        "scene:",
+        "script:",
     ]
 
-    lower_script = script.lower()
+    lower_text = text.lower()
 
-    for phrase in forbidden:
+    for phrase in forbidden_words:
 
-        if phrase in lower_script:
+        if phrase in lower_text:
 
             print("")
             print(
-                "ERROR: Forbidden production text found:"
+                "ERROR: Forbidden production text found."
             )
+
             print(
-                phrase
+                f"Found: {phrase}"
             )
+
+            print("")
+            print(
+                "Voice generation cancelled."
+            )
+
             sys.exit(1)
 
     # ------------------------------------------------------
-    # SAVE SPOKEN SCRIPT
+    # WORD COUNT
     # ------------------------------------------------------
 
-    with open(
-        SCRIPT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
+    word_count = len(
+        text.split()
+    )
 
-        f.write(script)
-
-    # ------------------------------------------------------
-    # SAVE TITLE
-    # ------------------------------------------------------
-
-    with open(
-        TITLE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(title)
-
-    # ------------------------------------------------------
-    # SAVE HASHTAGS
-    # ------------------------------------------------------
-
-    with open(
-        HASHTAGS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            " ".join(hashtags)
-        )
-
-    # ------------------------------------------------------
-    # SUCCESS
-    # ------------------------------------------------------
+    character_count = len(
+        text
+    )
 
     print("")
     print("================================")
-    print("SCRIPT READY")
+    print("SCRIPT CHECK")
     print("================================")
-    print(
-        f"Title saved: {TITLE_FILE}"
-    )
-    print(
-        f"Script saved: {SCRIPT_FILE}"
-    )
-    print(
-        f"Hashtags saved: {HASHTAGS_FILE}"
-    )
     print(
         f"Words: {word_count}"
     )
     print(
         f"Characters: {character_count}"
     )
+    print("================================")
+
+    # ------------------------------------------------------
+    # WORD LIMIT
+    # ------------------------------------------------------
+
+    if word_count < MIN_WORDS:
+
+        print("")
+        print(
+            "ERROR: Script is too short."
+        )
+
+        print(
+            f"Minimum words: {MIN_WORDS}"
+        )
+
+        sys.exit(1)
+
+    if word_count > MAX_WORDS:
+
+        print("")
+        print(
+            "ERROR: Script is too long."
+        )
+
+        print(
+            f"Maximum words: {MAX_WORDS}"
+        )
+
+        print("")
+        print(
+            "Voice generation cancelled."
+        )
+
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # CHARACTER LIMIT
+    # ------------------------------------------------------
+
+    print("")
+    print("================================")
+    print("ELEVENLABS QUOTA PROTECTION")
+    print("================================")
     print(
-        f"Hashtags: {len(hashtags)}"
+        f"Characters required: {character_count}"
+    )
+    print(
+        f"Maximum allowed: {MAX_CHARACTERS}"
     )
     print("================================")
+
+    if character_count > MAX_CHARACTERS:
+
+        print("")
+        print(
+            "ERROR: Script exceeds the "
+            "ElevenLabs character safety limit."
+        )
+
+        print("")
+        print(
+            "Voice generation cancelled."
+        )
+
+        print(
+            "No ElevenLabs request was sent."
+        )
+
+        sys.exit(1)
+
+    print("")
+    print(
+        "Quota check: PASSED"
+    )
+
+    # ------------------------------------------------------
+    # REMOVE OLD VOICE FILE
+    # ------------------------------------------------------
+
+    if os.path.isfile(
+        OUTPUT_FILE
+    ):
+
+        try:
+
+            os.remove(
+                OUTPUT_FILE
+            )
+
+        except Exception as e:
+
+            print(
+                "ERROR removing old voice.mp3:"
+            )
+
+            print(e)
+
+            sys.exit(1)
+
+    # ------------------------------------------------------
+    # TRY API KEYS ONE BY ONE
+    # ------------------------------------------------------
+
+    success = False
+
+    for key_number, api_key in api_keys:
+
+        print("")
+        print("================================")
+        print(
+            f"TRYING ELEVENLABS API KEY {key_number}"
+        )
+        print("================================")
+
+        try:
+
+            client = ElevenLabs(
+                api_key=api_key
+            )
+
+            print("")
+            print(
+                "Generating natural female narration..."
+            )
+
+            audio = client.text_to_speech.convert(
+                voice_id=VOICE_ID,
+                model_id=MODEL_ID,
+                text=text,
+                output_format="mp3_44100_128",
+            )
+
+            # --------------------------------------------------
+            # SAVE AUDIO
+            # --------------------------------------------------
+
+            with open(
+                OUTPUT_FILE,
+                "wb"
+            ) as f:
+
+                for chunk in audio:
+
+                    if chunk:
+
+                        f.write(chunk)
+
+            # --------------------------------------------------
+            # VERIFY AUDIO
+            # --------------------------------------------------
+
+            if not os.path.isfile(
+                OUTPUT_FILE
+            ):
+
+                raise RuntimeError(
+                    "voice.mp3 was not created."
+                )
+
+            file_size = os.path.getsize(
+                OUTPUT_FILE
+            )
+
+            if file_size <= 0:
+
+                raise RuntimeError(
+                    "voice.mp3 is empty."
+                )
+
+            success = True
+
+            print("")
+            print("================================")
+            print("VOICE CREATED SUCCESSFULLY")
+            print("================================")
+            print(
+                f"API Key used: {key_number}"
+            )
+            print(
+                f"Voice: {VOICE_NAME}"
+            )
+            print(
+                "Gender: Female"
+            )
+            print(
+                "Accent: American"
+            )
+            print(
+                f"Words: {word_count}"
+            )
+            print(
+                f"Characters: {character_count}"
+            )
+            print(
+                f"Output: {OUTPUT_FILE}"
+            )
+            print(
+                f"File size: {file_size} bytes"
+            )
+            print(
+                "Failover: ACTIVE"
+            )
+            print("================================")
+
+            break
+
+        except Exception as e:
+
+            error_text = str(
+                e
+            ).lower()
+
+            print("")
+            print("================================")
+            print(
+                f"ELEVENLABS KEY {key_number} ERROR"
+            )
+            print("================================")
+            print(e)
+            print("================================")
+
+            # --------------------------------------------------
+            # DETECT QUOTA ERRORS
+            # --------------------------------------------------
+
+            quota_error = (
+                "quota" in error_text
+                or
+                "quota_exceeded" in error_text
+                or
+                "credits" in error_text
+                or
+                "credit" in error_text
+                or
+                "exceeds your quota" in error_text
+                or
+                "rate limit" in error_text
+                or
+                "too many requests" in error_text
+            )
+
+            if quota_error:
+
+                print("")
+                print(
+                    f"API KEY {key_number} "
+                    "HAS NO USABLE QUOTA."
+                )
+
+                if key_number != api_keys[-1][0]:
+
+                    print(
+                        "Switching to next API key..."
+                    )
+
+                    continue
+
+                else:
+
+                    print(
+                        "No more API keys available."
+                    )
+
+                    continue
+
+            # --------------------------------------------------
+            # INVALID KEY
+            # --------------------------------------------------
+
+            invalid_key = (
+                "401" in error_text
+                or
+                "invalid api key" in error_text
+                or
+                "invalid_api_key" in error_text
+                or
+                "unauthorized" in error_text
+            )
+
+            if invalid_key:
+
+                print("")
+                print(
+                    f"API KEY {key_number} "
+                    "IS INVALID."
+                )
+
+                print(
+                    "Trying next available key..."
+                )
+
+                continue
+
+            # --------------------------------------------------
+            # TEMPORARY SERVER ERROR
+            # --------------------------------------------------
+
+            temporary_error = (
+                "500" in error_text
+                or
+                "502" in error_text
+                or
+                "503" in error_text
+                or
+                "504" in error_text
+                or
+                "timeout" in error_text
+                or
+                "temporarily unavailable"
+                in error_text
+            )
+
+            if temporary_error:
+
+                print("")
+                print(
+                    "Temporary ElevenLabs error."
+                )
+
+                print(
+                    "Trying next API key..."
+                )
+
+                continue
+
+            # --------------------------------------------------
+            # UNKNOWN ERROR
+            # --------------------------------------------------
+
+            print("")
+            print(
+                "Unknown ElevenLabs error."
+            )
+
+            print(
+                "Trying next API key..."
+            )
+
+            continue
+
+    # ------------------------------------------------------
+    # FINAL RESULT
+    # ------------------------------------------------------
+
+    if not success:
+
+        print("")
+        print("================================")
+        print("ALL ELEVENLABS KEYS FAILED")
+        print("================================")
+        print("")
+        print(
+            "No voice.mp3 was successfully created."
+        )
+        print("")
+        print(
+            "Workflow stopped safely."
+        )
+        print(
+            "Video generation should not continue."
+        )
+        print("================================")
+
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
+```
