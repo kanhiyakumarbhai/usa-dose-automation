@@ -1,159 +1,280 @@
 import os
 import sys
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from google.oauth2.credentials import Credentials
-from googleapiclient.http import MediaFileUpload
 
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
+
+
+# ==========================================================
+# USA DOSE - YOUTUBE UPLOADER
+# ==========================================================
 
 VIDEO_FILE = "usa_dose_short.mp4"
+TITLE_FILE = "video_title.txt"
+HASHTAGS_FILE = "video_hashtags.txt"
+
+# IMPORTANT:
+# Keep videos PRIVATE.
+PRIVACY_STATUS = "private"
 
 
-def read_file(filename, fallback=""):
+# ==========================================================
+# READ FILE
+# ==========================================================
+
+def read_file(filename):
+
     if not os.path.isfile(filename):
-        return fallback
 
-    with open(filename, "r", encoding="utf-8") as f:
+        print(f"ERROR: {filename} not found.")
+        sys.exit(1)
+
+    with open(
+        filename,
+        "r",
+        encoding="utf-8"
+    ) as f:
+
         return f.read().strip()
 
 
-def get_youtube_service():
-    client_id = os.getenv("YOUTUBE_CLIENT_ID")
-    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
-    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+# ==========================================================
+# MAIN
+# ==========================================================
 
-    if not client_id or not client_secret or not refresh_token:
-        raise RuntimeError(
-            "YouTube API credentials are missing."
-        )
+def main():
 
-    credentials = Credentials(
-        token=None,
-        refresh_token=refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=client_id,
-        client_secret=client_secret,
-        scopes=[
-            "https://www.googleapis.com/auth/youtube.upload"
-        ],
-    )
+    print("================================")
+    print("USA DOSE YOUTUBE UPLOADER")
+    print("================================")
 
-    return build(
-        "youtube",
-        "v3",
-        credentials=credentials,
-    )
+    # ------------------------------------------------------
+    # CHECK VIDEO
+    # ------------------------------------------------------
 
-
-def upload_video():
     if not os.path.isfile(VIDEO_FILE):
-        raise FileNotFoundError(
-            f"{VIDEO_FILE} not found."
+
+        print(
+            f"ERROR: {VIDEO_FILE} not found."
         )
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # YOUTUBE CREDENTIALS
+    # ------------------------------------------------------
+
+    client_id = os.getenv(
+        "YOUTUBE_CLIENT_ID"
+    )
+
+    client_secret = os.getenv(
+        "YOUTUBE_CLIENT_SECRET"
+    )
+
+    refresh_token = os.getenv(
+        "YOUTUBE_REFRESH_TOKEN"
+    )
+
+    if not client_id:
+
+        print(
+            "ERROR: YOUTUBE_CLIENT_ID missing."
+        )
+        sys.exit(1)
+
+    if not client_secret:
+
+        print(
+            "ERROR: YOUTUBE_CLIENT_SECRET missing."
+        )
+        sys.exit(1)
+
+    if not refresh_token:
+
+        print(
+            "ERROR: YOUTUBE_REFRESH_TOKEN missing."
+        )
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # READ TITLE
+    # ------------------------------------------------------
 
     title = read_file(
-        "video_title.txt",
-        "USA Dose - Amazing USA Fact",
+        TITLE_FILE
     )
 
-    hashtags_text = read_file(
-        "video_hashtags.txt",
-        "#USA #America #USAFacts #DidYouKnow #Shorts",
+    # ------------------------------------------------------
+    # READ HASHTAGS
+    # ------------------------------------------------------
+
+    hashtags = read_file(
+        HASHTAGS_FILE
     )
 
-    hashtags = hashtags_text.split()
+    if not title:
 
-    # Make sure there are at least 5 tags.
-    if len(hashtags) < 5:
-        raise RuntimeError(
-            "At least 5 relevant hashtags are required."
+        print(
+            "ERROR: YouTube title is empty."
         )
+        sys.exit(1)
+
+    if not hashtags:
+
+        print(
+            "ERROR: YouTube hashtags are empty."
+        )
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # CLEAN TITLE
+    # ------------------------------------------------------
+
+    title = title.replace(
+        "\n",
+        " "
+    ).strip()
+
+    if len(title) > 100:
+
+        title = title[:97] + "..."
+
+    # ------------------------------------------------------
+    # DESCRIPTION
+    # ------------------------------------------------------
 
     description = (
-        "Discover fascinating facts, hidden stories, "
-        "history and surprising places across America.\n\n"
-        + hashtags_text
-        + "\n\n"
-        "Subscribe to USA Dose for more interesting "
-        "stories about the United States."
+        "🇺🇸 USA Dose\n\n"
+        "Discover surprising facts, history, "
+        "places, inventions and stories from "
+        "the United States.\n\n"
+        f"{hashtags}\n\n"
+        "#Shorts"
     )
 
-    body = {
-        "snippet": {
-            "title": title,
-            "description": description,
-            "tags": hashtags,
-            "categoryId": "27",
-        },
+    # ------------------------------------------------------
+    # YOUTUBE CLIENT
+    # ------------------------------------------------------
 
-        # PRIVATE ONLY
-        # Automatic public publishing is OFF.
-        "status": {
-            "privacyStatus": "private",
-            "selfDeclaredMadeForKids": False,
-        },
-    }
+    print("")
+    print("Connecting to YouTube...")
 
-    youtube = get_youtube_service()
+    try:
 
-    media = MediaFileUpload(
-        VIDEO_FILE,
-        mimetype="video/mp4",
-        resumable=True,
-        chunksize=1024 * 1024,
+        credentials = Credentials(
+            None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=[
+                "https://www.googleapis.com/auth/youtube.upload"
+            ],
+        )
+
+        youtube = build(
+            "youtube",
+            "v3",
+            credentials=credentials
+        )
+
+    except Exception as e:
+
+        print("")
+        print("YOUTUBE AUTHENTICATION ERROR")
+        print(e)
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # UPLOAD
+    # ------------------------------------------------------
+
+    print("")
+    print("================================")
+    print("UPLOADING SHORT")
+    print("================================")
+    print("")
+    print(f"Title: {title}")
+    print("")
+    print(f"Hashtags: {hashtags}")
+    print("")
+    print(f"Privacy: {PRIVACY_STATUS}")
+    print("")
+    print("Uploading...")
+    print("")
+
+    try:
+
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": title,
+                    "description": description,
+                    "categoryId": "25",
+                    "tags": [
+                        tag.replace(
+                            "#",
+                            ""
+                        )
+                        for tag in hashtags.split()
+                        if tag.startswith("#")
+                    ],
+                },
+                "status": {
+                    "privacyStatus": PRIVACY_STATUS,
+                    "selfDeclaredMadeForKids": False,
+                },
+            },
+            media_body=MediaFileUpload(
+                VIDEO_FILE,
+                chunksize=-1,
+                resumable=True
+            ),
+        )
+
+        response = request.execute()
+
+    except Exception as e:
+
+        print("")
+        print("================================")
+        print("YOUTUBE UPLOAD ERROR")
+        print("================================")
+        print(e)
+        sys.exit(1)
+
+    # ------------------------------------------------------
+    # RESULT
+    # ------------------------------------------------------
+
+    video_id = response.get(
+        "id"
     )
-
-    print("================================")
-    print("UPLOADING USA DOSE SHORT")
-    print("================================")
-    print(f"TITLE: {title}")
-    print(f"HASHTAGS: {hashtags_text}")
-    print("PRIVACY: PRIVATE")
-    print("PUBLIC: OFF")
-    print("================================")
-
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body=body,
-        media_body=media,
-    )
-
-    response = None
-
-    while response is None:
-        status, response = request.next_chunk()
-
-        if status:
-            progress = int(status.progress() * 100)
-            print(f"Upload progress: {progress}%")
-
-    video_id = response.get("id")
 
     if not video_id:
-        raise RuntimeError(
-            "Upload finished but YouTube returned no video ID."
+
+        print(
+            "ERROR: YouTube did not return a video ID."
         )
+        sys.exit(1)
 
     print("")
     print("================================")
     print("UPLOAD SUCCESS")
     print("================================")
+    print("")
     print(f"Video ID: {video_id}")
-    print("Privacy: PRIVATE")
-    print("Automatic PUBLIC: OFF")
+    print(f"Title: {title}")
+    print(f"Privacy: {PRIVACY_STATUS}")
+    print("")
+    print(
+        "Video uploaded as PRIVATE."
+    )
+    print("")
     print("================================")
 
 
 if __name__ == "__main__":
-    try:
-        upload_video()
-
-    except HttpError as e:
-        print("YouTube API ERROR:")
-        print(e)
-        sys.exit(1)
-
-    except Exception as e:
-        print("ERROR:")
-        print(e)
-        sys.exit(1)
+    main()
