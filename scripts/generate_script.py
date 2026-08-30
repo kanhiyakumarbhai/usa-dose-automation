@@ -3,125 +3,120 @@ import re
 import sys
 from google import genai
 
-
 OUTPUT_FILE = "daily_script.txt"
 
-API_KEY = (
-    os.getenv("GEMINI_API_KEY")
-    or os.getenv("GOOGLE_API_KEY")
-)
+API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 if not API_KEY:
     print("ERROR: GEMINI_API_KEY / GOOGLE_API_KEY is missing.")
     sys.exit(1)
 
-
 client = genai.Client(api_key=API_KEY)
-
 
 PROMPT = r"""
 You create original YouTube Shorts for a channel called USA Dose.
 
-Create ONE completely new video about the United States.
+Create ONE completely new and factual video about the United States.
 
 IMPORTANT:
-- Pick a different topic each time.
-- Do NOT repeat the same fact, story, wording, or topic used recently.
-- The topic must be genuinely interesting to a US audience.
-- Use factual information.
+- Choose a different topic every time.
+- Do not repeat previous topics or facts.
+- Focus on surprising US history, places, laws, inventions, people,
+  mysteries, geography, culture, science or unusual facts.
+- The information must be factual.
 - Do not invent facts.
-- Keep the narration around 30-40 seconds.
-- Write natural spoken American English.
-- Make the opening hook strong but not misleading.
-- The narration must match the topic exactly.
-- Do not write stage directions.
-- Do not write camera directions.
-- Do not write production instructions.
-- Do not mention AI.
-- Do not mention automation.
-- NEVER use these words or phrases:
-  "voice over"
-  "voiceover"
-  "voice-over"
-  "narration"
-  "narrator"
-  "narrated"
-  "production"
-  "script"
-  "scene"
-  "on screen"
-  "visual"
-- Do not include labels such as:
-  Voice Over:
-  Narration:
-  Scene:
-  Title:
-  Hashtags:
+- Write approximately 25-30 seconds of natural spoken American English.
+- Aim for roughly 65-80 spoken words.
+- Strong hook in the first sentence.
+- Make it interesting for a US audience.
+- End naturally, preferably with a short question.
+- No stage directions.
+- No camera directions.
+- No production instructions.
+- No AI references.
 
-The output MUST use exactly this format:
+NEVER use these words or phrases in the spoken script:
+"voice over"
+"voiceover"
+"voice-over"
+"narration"
+"narrator"
+"narrated"
+"production"
+"script"
+"scene"
+"on screen"
+"visual"
+"caption"
+"subtitle"
 
-TITLE: <unique video title>
+Do not put labels inside the spoken script.
+
+OUTPUT EXACTLY:
+
+TITLE: <unique title>
 
 HASHTAGS: <at least 7 relevant hashtags>
 
 SCRIPT:
-<the complete spoken narration>
+<25-30 second spoken narration>
 
-Rules for TITLE:
-- Must be different from previous videos.
-- Must directly relate to this video's topic.
-- Must be interesting without fake clickbait.
-- Keep it suitable for a YouTube Short.
+TITLE RULES:
+- Unique every time.
+- Directly related to the actual topic.
+- Interesting but truthful.
+- Suitable for YouTube Shorts.
+- Do not use the same title repeatedly.
 
-Rules for HASHTAGS:
-- At least 7 hashtags.
-- They must be relevant to this specific video.
-- Do not use the exact same hashtag set every time.
+HASHTAG RULES:
+- Minimum 7 hashtags.
+- They must relate to the specific topic.
+- Include #Shorts.
+- Do not use the exact same hashtag list every time.
 
-Rules for SCRIPT:
-- 30-40 seconds when spoken naturally.
-- Original wording.
-- Interesting hook in the first sentence.
-- Clear and conversational.
-- End with a natural engagement question when appropriate.
+SCRIPT RULES:
+- 65-80 words approximately.
+- Natural American English.
+- Conversational.
+- Strong hook.
+- Only words that should actually be spoken.
 """
 
-
 def clean_text(text):
-    replacements = {
-        "voice over": "",
-        "voiceover": "",
-        "voice-over": "",
-        "Voice Over": "",
-        "Voiceover": "",
-        "Voice-over": "",
-        "narration": "",
-        "Narration": "",
-        "narrator": "",
-        "Narrator": "",
-        "production": "",
-        "Production": "",
-        "script": "",
-        "Script": "",
-        "scene": "",
-        "Scene": "",
-        "on screen": "",
-        "On screen": "",
-        "visual": "",
-        "Visual": "",
-    }
+    forbidden = [
+        r"voice[\s_-]*over",
+        r"voiceover",
+        r"narration",
+        r"narrator",
+        r"narrated",
+        r"production",
+        r"on[\s_-]*screen",
+        r"visual",
+        r"caption",
+        r"subtitle",
+    ]
 
-    for old, new in replacements.items():
-        text = text.replace(old, new)
+    for pattern in forbidden:
+        text = re.sub(
+            pattern,
+            "",
+            text,
+            flags=re.IGNORECASE
+        )
 
-    text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
+    text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
 
 def extract_section(text, name):
-    pattern = rf"{name}\s*:\s*(.*?)(?=\n[A-Z_ ]+\s*:|$)"
-    match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+    pattern = rf"{name}\s*:\s*(.*?)(?=\n[A-Z][A-Z_ ]*\s*:|$)"
+
+    match = re.search(
+        pattern,
+        text,
+        flags=re.IGNORECASE | re.DOTALL
+    )
 
     if match:
         return match.group(1).strip()
@@ -133,107 +128,124 @@ def main():
     print("================================")
     print("USA DOSE SCRIPT GENERATOR")
     print("================================")
+    print("Target duration: 25-30 seconds")
+    print("Target words: 65-80")
+    print("")
 
     try:
         response = client.models.generate_content(
             model="gemini-3.6-flash",
-            contents=PROMPT,
+            contents=PROMPT
         )
 
         result = response.text.strip()
 
     except Exception as e:
-        print("ERROR generating script:")
+        print("GEMINI ERROR")
         print(e)
         sys.exit(1)
-
-    result = clean_text(result)
 
     title = extract_section(result, "TITLE")
     hashtags = extract_section(result, "HASHTAGS")
     script = extract_section(result, "SCRIPT")
 
+    title = clean_text(title)
+    script = clean_text(script)
+
+    hashtags = re.sub(
+        r"^(HASHTAGS)\s*:\s*",
+        "",
+        hashtags,
+        flags=re.IGNORECASE
+    ).strip()
+
+    hashtag_list = re.findall(
+        r"#[A-Za-z0-9_]+",
+        hashtags
+    )
+
     if not title:
-        print("ERROR: Title was not generated.")
+        print("ERROR: Title missing.")
         sys.exit(1)
 
     if not script:
-        print("ERROR: Script was not generated.")
+        print("ERROR: Script missing.")
         sys.exit(1)
 
-    # Remove accidental labels from generated text
-    title = re.sub(
-        r"^(title)\s*:\s*",
-        "",
-        title,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    hashtags = re.sub(
-        r"^(hashtags)\s*:\s*",
-        "",
-        hashtags,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    script = re.sub(
-        r"^(script)\s*:\s*",
-        "",
-        script,
-        flags=re.IGNORECASE,
-    ).strip()
-
-    # Make sure there are at least 5 hashtags.
-    hashtag_list = re.findall(r"#\w+", hashtags)
-
-    if len(hashtag_list) < 5:
-        print("ERROR: Fewer than 5 hashtags generated.")
+    if len(hashtag_list) < 7:
+        print("ERROR: Less than 7 hashtags generated.")
         sys.exit(1)
 
-    # Final forbidden-word safety check
-    forbidden = [
+    word_count = len(script.split())
+
+    print("TITLE:")
+    print(title)
+    print("")
+
+    print("HASHTAGS:")
+    print(" ".join(hashtag_list))
+    print("")
+
+    print("SCRIPT:")
+    print(script)
+    print("")
+
+    print(f"Word count: {word_count}")
+
+    # Safety check
+    forbidden_check = [
         "voice over",
         "voiceover",
         "voice-over",
         "narration",
         "narrator",
-        "narrated",
         "production",
         "on screen",
+        "visual",
+        "caption",
+        "subtitle",
     ]
 
     lowered = script.lower()
 
-    for word in forbidden:
-        if word in lowered:
-            print(f"ERROR: Forbidden phrase found: {word}")
+    for phrase in forbidden_check:
+        if phrase in lowered:
+            print(
+                f"ERROR: Forbidden phrase detected: {phrase}"
+            )
             sys.exit(1)
 
-    # Save only the actual spoken script.
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    # Keep script compact enough for 25-30 sec narration.
+    if word_count > 90:
+        print("ERROR: Script is too long.")
+        sys.exit(1)
+
+    # Save spoken words only.
+    with open(
+        OUTPUT_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
         f.write(script)
 
-    # Save metadata separately for the video uploader.
-    with open("video_title.txt", "w", encoding="utf-8") as f:
+    # Save metadata for YouTube.
+    with open(
+        "video_title.txt",
+        "w",
+        encoding="utf-8"
+    ) as f:
         f.write(title)
 
-    with open("video_hashtags.txt", "w", encoding="utf-8") as f:
+    with open(
+        "video_hashtags.txt",
+        "w",
+        encoding="utf-8"
+    ) as f:
         f.write(" ".join(hashtag_list))
 
     print("")
     print("================================")
-    print("SCRIPT GENERATED SUCCESSFULLY")
-    print("================================")
-    print("")
-    print("TITLE:")
-    print(title)
-    print("")
-    print("HASHTAGS:")
-    print(" ".join(hashtag_list))
-    print("")
-    print("SCRIPT:")
-    print(script)
-    print("")
+    print("SCRIPT READY")
     print("================================")
 
 
