@@ -20,7 +20,7 @@ OUTPUT_FILE = "voice.mp3"
 # QUOTA PROTECTION
 # ==========================================================
 # Keep scripts short so ElevenLabs credits are not wasted.
-MAX_CHARACTERS = 450
+MAX_CHARACTERS = 350
 MIN_WORDS = 55
 MAX_WORDS = 85
 
