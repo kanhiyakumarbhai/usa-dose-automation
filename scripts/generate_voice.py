@@ -1,640 +1,408 @@
-import os
-import sys
-import re
+name: USA Dose Daily Automation
 
-from elevenlabs.client import ElevenLabs
+on:
+  workflow_dispatch:
 
+  schedule:
+    # 2 Shorts every day
+    # 00:30 UTC = 06:00 AM IST
+    - cron: "30 0 * * *"
 
-# ==========================================================
-# USA DOSE - ELEVENLABS MULTI-KEY FAILOVER
-# ==========================================================
+    # 12:30 UTC = 06:00 PM IST
+    - cron: "30 12 * * *"
 
-VOICE_NAME = "Laura"
-VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
+permissions:
+  contents: write
 
-MODEL_ID = "eleven_multilingual_v2"
 
-SCRIPT_FILE = "daily_script.txt"
-OUTPUT_FILE = "voice.mp3"
+jobs:
 
-# ==========================================================
-# QUOTA PROTECTION
-# ==========================================================
+  create-and-upload:
 
-MAX_CHARACTERS = 350
-MIN_WORDS = 40
-MAX_WORDS = 60
+    runs-on: ubuntu-latest
 
+    steps:
 
-# ==========================================================
-# ELEVENLABS API KEYS
-# ==========================================================
-# GitHub Secrets:
-#
-# ELEVENLABS_API_KEY_1
-# ELEVENLABS_API_KEY_2
-# ELEVENLABS_API_KEY_3
-#
-# Add more keys if needed:
-# ELEVENLABS_API_KEY_4
-# ELEVENLABS_API_KEY_5
-# ==========================================================
+      # ==================================================
+      # CHECKOUT
+      # ==================================================
 
-def get_api_keys():
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    keys = []
 
-    for i in range(1, 11):
+      # ==================================================
+      # PYTHON
+      # ==================================================
 
-        key = os.getenv(
-            f"ELEVENLABS_API_KEY_{i}"
-        )
+      - name: Setup Python
+        uses: actions/setup-python@v5
 
-        if key:
-            key = key.strip()
-
-            if key:
-                keys.append(
-                    (i, key)
-                )
-
-    # Backward compatibility:
-    # If only ELEVENLABS_API_KEY exists,
-    # use it as the first key.
-
-    if not keys:
-
-        old_key = os.getenv(
-            "ELEVENLABS_API_KEY"
-        )
-
-        if old_key:
-            old_key = old_key.strip()
-
-            if old_key:
-                keys.append(
-                    (1, old_key)
-                )
-
-    return keys
-
-
-# ==========================================================
-# CLEAN SCRIPT
-# ==========================================================
-
-def clean_text(text):
-
-    forbidden_patterns = [
-        r"voice[\s_-]*over\s*:?",
-        r"voiceover\s*:?",
-        r"narration\s*:?",
-        r"narrator\s*:?",
-        r"production\s*:?",
-        r"on[\s_-]*screen\s*:?",
-        r"visual\s*:?",
-        r"caption\s*:?",
-        r"subtitle\s*:?",
-        r"scene\s*:?",
-    ]
+        with:
+          python-version: "3.12"
 
-    for pattern in forbidden_patterns:
-
-        text = re.sub(
-            pattern,
-            "",
-            text,
-            flags=re.IGNORECASE
-        )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    return text.strip()
-
-
-# ==========================================================
-# MAIN
-# ==========================================================
-
-def main():
-
-    print("================================")
-    print("USA DOSE FEMALE VOICE")
-    print("================================")
-    print(f"Voice: {VOICE_NAME}")
-    print(f"Voice ID: {VOICE_ID}")
-    print(f"Model: {MODEL_ID}")
-    print("================================")
-
-    # ------------------------------------------------------
-    # GET API KEYS
-    # ------------------------------------------------------
-
-    api_keys = get_api_keys()
-
-    if not api_keys:
-
-        print("")
-        print("ELEVENLABS ERROR")
-        print("")
-        print(
-            "No ElevenLabs API keys found."
-        )
-        print("")
-        print(
-            "Add these GitHub Secrets:"
-        )
-        print(
-            "ELEVENLABS_API_KEY"
-        )
-        print(
-            "ELEVENLABS_API_KEY_2"
-        )
-        print(
-            "ELEVENLABS_API_KEY_3"
-        )
-
-        sys.exit(1)
-
-    print("")
-    print(
-        f"API keys available: {len(api_keys)}"
-    )
-
-    # ------------------------------------------------------
-    # CHECK SCRIPT FILE
-    # ------------------------------------------------------
-
-    if not os.path.isfile(
-        SCRIPT_FILE
-    ):
-
-        print("")
-        print(
-            "ERROR: daily_script.txt not found."
-        )
-
-        sys.exit(1)
-
-    with open(
-        SCRIPT_FILE,
-        "r",
-        encoding="utf-8"
-    ) as f:
-
-        text = f.read().strip()
-
-    if not text:
-
-        print("")
-        print(
-            "ERROR: daily_script.txt is empty."
-        )
-
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # CLEAN SCRIPT
-    # ------------------------------------------------------
-
-    text = clean_text(
-        text
-    )
-
-    # ------------------------------------------------------
-    # CHECK FOR FORBIDDEN WORDS
-    # ------------------------------------------------------
-
-    forbidden_words = [
-        "voice over",
-        "voice-over",
-        "voiceover",
-        "narration",
-        "narrator",
-        "production",
-        "on screen",
-        "visual",
-        "caption",
-        "subtitle",
-        "scene:",
-        "script:",
-    ]
-
-    lower_text = text.lower()
-
-    for phrase in forbidden_words:
-
-        if phrase in lower_text:
-
-            print("")
-            print(
-                "ERROR: Forbidden production text found."
-            )
-
-            print(
-                f"Found: {phrase}"
-            )
-
-            print("")
-            print(
-                "Voice generation cancelled."
-            )
-
-            sys.exit(1)
-
-    # ------------------------------------------------------
-    # WORD COUNT
-    # ------------------------------------------------------
-
-    word_count = len(
-        text.split()
-    )
-
-    character_count = len(
-        text
-    )
-
-    print("")
-    print("================================")
-    print("SCRIPT CHECK")
-    print("================================")
-    print(
-        f"Words: {word_count}"
-    )
-    print(
-        f"Characters: {character_count}"
-    )
-    print("================================")
-
-    # ------------------------------------------------------
-    # WORD LIMIT
-    # ------------------------------------------------------
-
-    if word_count < MIN_WORDS:
-
-        print("")
-        print(
-            "ERROR: Script is too short."
-        )
-
-        print(
-            f"Minimum words: {MIN_WORDS}"
-        )
-
-        sys.exit(1)
-
-    if word_count > MAX_WORDS:
-
-        print("")
-        print(
-            "ERROR: Script is too long."
-        )
-
-        print(
-            f"Maximum words: {MAX_WORDS}"
-        )
-
-        print("")
-        print(
-            "Voice generation cancelled."
-        )
-
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # CHARACTER LIMIT
-    # ------------------------------------------------------
-
-    print("")
-    print("================================")
-    print("ELEVENLABS QUOTA PROTECTION")
-    print("================================")
-    print(
-        f"Characters required: {character_count}"
-    )
-    print(
-        f"Maximum allowed: {MAX_CHARACTERS}"
-    )
-    print("================================")
-
-    if character_count > MAX_CHARACTERS:
-
-        print("")
-        print(
-            "ERROR: Script exceeds the "
-            "ElevenLabs character safety limit."
-        )
-
-        print("")
-        print(
-            "Voice generation cancelled."
-        )
-
-        print(
-            "No ElevenLabs request was sent."
-        )
-
-        sys.exit(1)
-
-    print("")
-    print(
-        "Quota check: PASSED"
-    )
-
-    # ------------------------------------------------------
-    # REMOVE OLD VOICE FILE
-    # ------------------------------------------------------
-
-    if os.path.isfile(
-        OUTPUT_FILE
-    ):
-
-        try:
-
-            os.remove(
-                OUTPUT_FILE
-            )
-
-        except Exception as e:
-
-            print(
-                "ERROR removing old voice.mp3:"
-            )
-
-            print(e)
-
-            sys.exit(1)
-
-    # ------------------------------------------------------
-    # TRY API KEYS ONE BY ONE
-    # ------------------------------------------------------
-
-    success = False
-
-    for key_number, api_key in api_keys:
-
-        print("")
-        print("================================")
-        print(
-            f"TRYING ELEVENLABS API KEY {key_number}"
-        )
-        print("================================")
-
-        try:
-
-            client = ElevenLabs(
-                api_key=api_key
-            )
-
-            print("")
-            print(
-                "Generating natural female narration..."
-            )
-
-            audio = client.text_to_speech.convert(
-                voice_id=VOICE_ID,
-                model_id=MODEL_ID,
-                text=text,
-                output_format="mp3_44100_128",
-            )
-
-            # --------------------------------------------------
-            # SAVE AUDIO
-            # --------------------------------------------------
-
-            with open(
-                OUTPUT_FILE,
-                "wb"
-            ) as f:
-
-                for chunk in audio:
-
-                    if chunk:
-
-                        f.write(chunk)
-
-            # --------------------------------------------------
-            # VERIFY AUDIO
-            # --------------------------------------------------
-
-            if not os.path.isfile(
-                OUTPUT_FILE
-            ):
-
-                raise RuntimeError(
-                    "voice.mp3 was not created."
-                )
-
-            file_size = os.path.getsize(
-                OUTPUT_FILE
-            )
-
-            if file_size <= 0:
-
-                raise RuntimeError(
-                    "voice.mp3 is empty."
-                )
-
-            success = True
-
-            print("")
-            print("================================")
-            print("VOICE CREATED SUCCESSFULLY")
-            print("================================")
-            print(
-                f"API Key used: {key_number}"
-            )
-            print(
-                f"Voice: {VOICE_NAME}"
-            )
-            print(
-                "Gender: Female"
-            )
-            print(
-                "Accent: American"
-            )
-            print(
-                f"Words: {word_count}"
-            )
-            print(
-                f"Characters: {character_count}"
-            )
-            print(
-                f"Output: {OUTPUT_FILE}"
-            )
-            print(
-                f"File size: {file_size} bytes"
-            )
-            print(
-                "Failover: ACTIVE"
-            )
-            print("================================")
-
-            break
-
-        except Exception as e:
-
-            error_text = str(
-                e
-            ).lower()
-
-            print("")
-            print("================================")
-            print(
-                f"ELEVENLABS KEY {key_number} ERROR"
-            )
-            print("================================")
-            print(e)
-            print("================================")
-
-            # --------------------------------------------------
-            # DETECT QUOTA ERRORS
-            # --------------------------------------------------
-
-            quota_error = (
-                "quota" in error_text
-                or
-                "quota_exceeded" in error_text
-                or
-                "credits" in error_text
-                or
-                "credit" in error_text
-                or
-                "exceeds your quota" in error_text
-                or
-                "rate limit" in error_text
-                or
-                "too many requests" in error_text
-            )
-
-            if quota_error:
-
-                print("")
-                print(
-                    f"API KEY {key_number} "
-                    "HAS NO USABLE QUOTA."
-                )
-
-                if key_number != api_keys[-1][0]:
-
-                    print(
-                        "Switching to next API key..."
-                    )
-
-                    continue
-
-                else:
-
-                    print(
-                        "No more API keys available."
-                    )
-
-                    continue
-
-            # --------------------------------------------------
-            # INVALID KEY
-            # --------------------------------------------------
-
-            invalid_key = (
-                "401" in error_text
-                or
-                "invalid api key" in error_text
-                or
-                "invalid_api_key" in error_text
-                or
-                "unauthorized" in error_text
-            )
-
-            if invalid_key:
-
-                print("")
-                print(
-                    f"API KEY {key_number} "
-                    "IS INVALID."
-                )
-
-                print(
-                    "Trying next available key..."
-                )
-
-                continue
-
-            # --------------------------------------------------
-            # TEMPORARY SERVER ERROR
-            # --------------------------------------------------
-
-            temporary_error = (
-                "500" in error_text
-                or
-                "502" in error_text
-                or
-                "503" in error_text
-                or
-                "504" in error_text
-                or
-                "timeout" in error_text
-                or
-                "temporarily unavailable"
-                in error_text
-            )
-
-            if temporary_error:
-
-                print("")
-                print(
-                    "Temporary ElevenLabs error."
-                )
-
-                print(
-                    "Trying next API key..."
-                )
-
-                continue
-
-            # --------------------------------------------------
-            # UNKNOWN ERROR
-            # --------------------------------------------------
-
-            print("")
-            print(
-                "Unknown ElevenLabs error."
-            )
-
-            print(
-                "Trying next API key..."
-            )
-
-            continue
-
-    # ------------------------------------------------------
-    # FINAL RESULT
-    # ------------------------------------------------------
-
-    if not success:
-
-        print("")
-        print("================================")
-        print("ALL ELEVENLABS KEYS FAILED")
-        print("================================")
-        print("")
-        print(
-            "No voice.mp3 was successfully created."
-        )
-        print("")
-        print(
-            "Workflow stopped safely."
-        )
-        print(
-            "Video generation should not continue."
-        )
-        print("================================")
-
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+
+      # ==================================================
+      # SYSTEM PACKAGES
+      # ==================================================
+
+      - name: Install FFmpeg and eSpeak
+        run: |
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            ffmpeg \
+            espeak-ng
+
+
+      # ==================================================
+      # PYTHON PACKAGES
+      # ==================================================
+
+      - name: Install Python packages
+        run: |
+
+          python -m pip install --upgrade pip
+
+          pip install elevenlabs
+          pip install requests
+          pip install google-genai
+
+          pip install google-api-python-client
+          pip install google-auth
+          pip install google-auth-oauthlib
+          pip install google-auth-httplib2
+
+
+      # ==================================================
+      # CHECK PROJECT FILES
+      # ==================================================
+
+      - name: Check project files
+        run: |
+
+          echo "================================"
+          echo "PROJECT FILES"
+          echo "================================"
+
+          ls -lah
+
+          echo ""
+          echo "Scripts:"
+          ls -lah scripts || true
+
+          echo ""
+
+          if [ ! -f "scripts/generate_script.py" ]; then
+            echo "ERROR: scripts/generate_script.py not found"
+            exit 1
+          fi
+
+          if [ ! -f "scripts/generate_voice.py" ]; then
+            echo "ERROR: scripts/generate_voice.py not found"
+            exit 1
+          fi
+
+          if [ ! -f "create_video.py" ]; then
+            echo "ERROR: create_video.py not found"
+            exit 1
+          fi
+
+          if [ ! -f "download_clips.py" ]; then
+            echo "ERROR: download_clips.py not found"
+            exit 1
+          fi
+
+          if [ ! -f "upload_video.py" ]; then
+            echo "ERROR: upload_video.py not found"
+            exit 1
+          fi
+
+          echo ""
+          echo "All required files found."
+
+
+      # ==================================================
+      # GENERATE DAILY SCRIPT
+      # ==================================================
+
+      - name: Generate daily USA Dose script
+
+        env:
+
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
+        run: |
+
+          echo "================================"
+          echo "GENERATING DAILY SCRIPT"
+          echo "================================"
+
+          python scripts/generate_script.py
+
+          if [ ! -s "daily_script.txt" ]; then
+            echo "ERROR: daily_script.txt is empty"
+            exit 1
+          fi
+
+          if [ ! -s "video_title.txt" ]; then
+            echo "ERROR: video_title.txt is empty"
+            exit 1
+          fi
+
+          if [ ! -s "video_hashtags.txt" ]; then
+            echo "ERROR: video_hashtags.txt is empty"
+            exit 1
+          fi
+
+          echo ""
+          echo "SCRIPT GENERATED"
+
+          echo ""
+          echo "SCRIPT:"
+          cat daily_script.txt
+
+          echo ""
+          echo "TITLE:"
+          cat video_title.txt
+
+          echo ""
+          echo "HASHTAGS:"
+          cat video_hashtags.txt
+
+
+      # ==================================================
+      # GENERATE LAURA FEMALE VOICE
+      # ==================================================
+
+      - name: Generate Laura Female Voice
+
+        env:
+
+          # IMPORTANT:
+          # Multi-key failover
+
+          ELEVENLABS_API_KEY_1: ${{ secrets.ELEVENLABS_API_KEY }}
+
+          ELEVENLABS_API_KEY_2: ${{ secrets.ELEVENLABS_API_KEY_2 }}
+
+          ELEVENLABS_API_KEY_3: ${{ secrets.ELEVENLABS_API_KEY_3 }}
+
+          ELEVENLABS_API_KEY_4: ${{ secrets.ELEVENLABS_API_KEY_4 }}
+
+          ELEVENLABS_API_KEY_5: ${{ secrets.ELEVENLABS_API_KEY_5 }}
+
+        run: |
+
+          echo "================================"
+          echo "GENERATING FEMALE VOICE"
+          echo "================================"
+
+          python scripts/generate_voice.py
+
+          if [ ! -f "voice.mp3" ]; then
+
+            echo ""
+            echo "ERROR: voice.mp3 was not created"
+
+            exit 1
+
+          fi
+
+          echo ""
+          echo "VOICE CREATED"
+
+          ls -lh voice.mp3
+
+
+      # ==================================================
+      # DOWNLOAD MOVING STOCK CLIPS
+      # ==================================================
+
+      - name: Download moving stock clips
+
+        env:
+
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
+        run: |
+
+          echo "================================"
+          echo "DOWNLOADING MOVING STOCK CLIPS"
+          echo "================================"
+
+          rm -rf clips
+
+          mkdir -p clips
+
+          python download_clips.py
+
+          echo ""
+          echo "DOWNLOADED CLIPS:"
+
+          find clips \
+            -maxdepth 1 \
+            -type f \
+            -print || true
+
+          CLIP_COUNT=$(
+            find clips \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name "*.mp4" \
+              -o \
+              -name "*.mov" \
+            \) \
+            | wc -l
+          )
+
+          echo ""
+          echo "Clip count: $CLIP_COUNT"
+
+          if [ "$CLIP_COUNT" -lt 1 ]; then
+
+            echo ""
+            echo "ERROR: No moving video clips downloaded"
+
+            exit 1
+
+          fi
+
+
+      # ==================================================
+      # CREATE HD VIDEO
+      # ==================================================
+
+      - name: Create USA Dose Short
+
+        run: |
+
+          echo "================================"
+          echo "CREATING USA DOSE SHORT"
+          echo "================================"
+
+          python create_video.py
+
+          if [ ! -f "usa_dose_short.mp4" ]; then
+
+            echo ""
+            echo "ERROR: usa_dose_short.mp4 was not created"
+
+            exit 1
+
+          fi
+
+          echo ""
+          echo "FINAL VIDEO CREATED:"
+
+          ls -lh usa_dose_short.mp4
+
+          echo ""
+          echo "VIDEO INFORMATION:"
+
+          ffprobe \
+            -v error \
+            -select_streams v:0 \
+            -show_entries stream=codec_name,width,height,r_frame_rate \
+            -of default=noprint_wrappers=1 \
+            usa_dose_short.mp4 || true
+
+
+      # ==================================================
+      # UPLOAD TO YOUTUBE
+      # ==================================================
+
+      - name: Upload Short to YouTube
+
+        env:
+
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+
+        run: |
+
+          echo "================================"
+          echo "UPLOADING SHORT TO YOUTUBE"
+          echo "================================"
+
+          python upload_video.py
+
+
+      # ==================================================
+      # SAVE GENERATED FILES
+      # ==================================================
+
+      - name: Save generated files
+
+        run: |
+
+          git config user.name "USA Dose Bot"
+
+          git config user.email \
+            "actions@users.noreply.github.com"
+
+          git add \
+            daily_script.txt \
+            video_title.txt \
+            video_hashtags.txt \
+            voice.mp3 \
+            usa_dose_short.mp4
+
+          if git diff --cached --quiet; then
+
+            echo ""
+            echo "No changes to commit."
+
+          else
+
+            git commit \
+              -m "Daily USA Dose Short"
+
+            git push
+
+          fi
+
+
+      # ==================================================
+      # COMPLETE
+      # ==================================================
+
+      - name: Automation complete
+
+        run: |
+
+          echo ""
+          echo "================================"
+          echo "USA DOSE AUTOMATION COMPLETE"
+          echo "================================"
+
+          echo "Daily Shorts: 2"
+
+          echo "Voice: Laura"
+
+          echo "Voice: Female"
+
+          echo "Accent: American"
+
+          echo "HD: 1080x1920"
+
+          echo "Moving clips: YES"
+
+          echo "Captions: YES"
+
+          echo "Unique title: YES"
+
+          echo "Hashtags: 7+"
+
+          echo "YouTube: PRIVATE"
+
+          echo "Multi API failover: ACTIVE"
+
+          echo "================================"
