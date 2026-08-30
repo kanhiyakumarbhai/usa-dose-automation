@@ -25,8 +25,8 @@ IMPORTANT:
   mysteries, geography, culture, science or unusual facts.
 - The information must be factual.
 - Do not invent facts.
-- Write approximately 25-30 seconds of natural spoken American English.
-- Aim for roughly 65-80 spoken words.
+- Write approximately 20-25 seconds of natural spoken American English.
+- Aim for roughly 50-60 spoken words.
 - Strong hook in the first sentence.
 - Make it interesting for a US audience.
 - End naturally, preferably with a short question.
