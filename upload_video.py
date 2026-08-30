@@ -8,24 +8,31 @@ from googleapiclient.http import MediaFileUpload
 
 VIDEO_FILE = "usa_dose_short.mp4"
 
-CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
-REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN")
+
+def read_file(filename, fallback=""):
+    if not os.path.isfile(filename):
+        return fallback
+
+    with open(filename, "r", encoding="utf-8") as f:
+        return f.read().strip()
 
 
 def get_youtube_service():
-    if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
+    client_id = os.getenv("YOUTUBE_CLIENT_ID")
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
+
+    if not client_id or not client_secret or not refresh_token:
         raise RuntimeError(
-            "Missing YouTube API credentials. "
-            "Check GitHub Secrets."
+            "YouTube API credentials are missing."
         )
 
     credentials = Credentials(
         token=None,
-        refresh_token=REFRESH_TOKEN,
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
+        client_id=client_id,
+        client_secret=client_secret,
         scopes=[
             "https://www.googleapis.com/auth/youtube.upload"
         ],
@@ -34,7 +41,7 @@ def get_youtube_service():
     return build(
         "youtube",
         "v3",
-        credentials=credentials
+        credentials=credentials,
     )
 
 
@@ -44,44 +51,50 @@ def upload_video():
             f"{VIDEO_FILE} not found."
         )
 
-    youtube = get_youtube_service()
-
-    title = "USA Dose | Amazing USA Fact #Shorts"
-
-    description = (
-        "Discover interesting facts, hidden stories and "
-        "amazing places across the United States.\n\n"
-        "Subscribe to USA Dose for more USA Shorts!"
+    title = read_file(
+        "video_title.txt",
+        "USA Dose - Amazing USA Fact",
     )
 
-    tags = [
-        "USA",
-        "America",
-        "USA facts",
-        "American facts",
-        "Did you know",
-        "US history",
-        "USA Dose",
-        "Shorts",
-    ]
+    hashtags_text = read_file(
+        "video_hashtags.txt",
+        "#USA #America #USAFacts #DidYouKnow #Shorts",
+    )
+
+    hashtags = hashtags_text.split()
+
+    # Make sure there are at least 5 tags.
+    if len(hashtags) < 5:
+        raise RuntimeError(
+            "At least 5 relevant hashtags are required."
+        )
+
+    description = (
+        "Discover fascinating facts, hidden stories, "
+        "history and surprising places across America.\n\n"
+        + hashtags_text
+        + "\n\n"
+        "Subscribe to USA Dose for more interesting "
+        "stories about the United States."
+    )
 
     body = {
         "snippet": {
             "title": title,
             "description": description,
-            "tags": tags,
+            "tags": hashtags,
             "categoryId": "27",
         },
 
-        # ==================================================
-        # IMPORTANT:
         # PRIVATE ONLY
-        # ==================================================
+        # Automatic public publishing is OFF.
         "status": {
             "privacyStatus": "private",
             "selfDeclaredMadeForKids": False,
         },
     }
+
+    youtube = get_youtube_service()
 
     media = MediaFileUpload(
         VIDEO_FILE,
@@ -93,9 +106,11 @@ def upload_video():
     print("================================")
     print("UPLOADING USA DOSE SHORT")
     print("================================")
-    print("Privacy: PRIVATE")
-    print("Automatic PUBLIC publishing: OFF")
-    print("")
+    print(f"TITLE: {title}")
+    print(f"HASHTAGS: {hashtags_text}")
+    print("PRIVACY: PRIVATE")
+    print("PUBLIC: OFF")
+    print("================================")
 
     request = youtube.videos().insert(
         part="snippet,status",
@@ -116,7 +131,7 @@ def upload_video():
 
     if not video_id:
         raise RuntimeError(
-            "YouTube upload completed but no video ID was returned."
+            "Upload finished but YouTube returned no video ID."
         )
 
     print("")
@@ -125,7 +140,7 @@ def upload_video():
     print("================================")
     print(f"Video ID: {video_id}")
     print("Privacy: PRIVATE")
-    print("PUBLIC publishing: DISABLED")
+    print("Automatic PUBLIC: OFF")
     print("================================")
 
 
@@ -134,15 +149,11 @@ if __name__ == "__main__":
         upload_video()
 
     except HttpError as e:
-        print("================================")
-        print("YOUTUBE API ERROR")
-        print("================================")
+        print("YouTube API ERROR:")
         print(e)
         sys.exit(1)
 
     except Exception as e:
-        print("================================")
-        print("UPLOAD ERROR")
-        print("================================")
+        print("ERROR:")
         print(e)
         sys.exit(1)
