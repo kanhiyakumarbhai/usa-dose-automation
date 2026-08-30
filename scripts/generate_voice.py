@@ -21,8 +21,8 @@ OUTPUT_FILE = "voice.mp3"
 # ==========================================================
 # Keep scripts short so ElevenLabs credits are not wasted.
 MAX_CHARACTERS = 350
-MIN_WORDS = 55
-MAX_WORDS = 85
+MIN_WORDS = 40
+MAX_WORDS =60
 
 
 def main():
