@@ -5,6 +5,11 @@ import re
 from elevenlabs.client import ElevenLabs
 
 
+# ==========================================================
+# USA DOSE - LAURA FEMALE VOICE
+# MULTI API KEY FAILOVER
+# ==========================================================
+
 VOICE_NAME = "Laura"
 VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
 MODEL_ID = "eleven_multilingual_v2"
@@ -12,28 +17,33 @@ MODEL_ID = "eleven_multilingual_v2"
 SCRIPT_FILE = "daily_script.txt"
 OUTPUT_FILE = "voice.mp3"
 
-MAX_CHARACTERS = 350
 MIN_WORDS = 40
 MAX_WORDS = 55
+MAX_CHARACTERS = 350
 
+
+# ==========================================================
+# GET ELEVENLABS KEYS
+# ==========================================================
 
 def get_api_keys():
 
     keys = []
 
-    for i in range(1, 6):
+    for number in range(1, 6):
 
         key = os.getenv(
-            f"ELEVENLABS_API_KEY_{i}"
+            f"ELEVENLABS_API_KEY_{number}"
         )
 
-        if key:
-            key = key.strip()
+        if key and key.strip():
 
-            if key:
-                keys.append(
-                    (i, key)
+            keys.append(
+                (
+                    number,
+                    key.strip()
                 )
+            )
 
     # Old secret support
     if not keys:
@@ -42,15 +52,23 @@ def get_api_keys():
             "ELEVENLABS_API_KEY"
         )
 
-        if old_key:
+        if old_key and old_key.strip():
+
             keys.append(
-                (1, old_key.strip())
+                (
+                    1,
+                    old_key.strip()
+                )
             )
 
     return keys
 
 
-def clean_text(text):
+# ==========================================================
+# CLEAN SCRIPT
+# ==========================================================
+
+def clean_script(text):
 
     forbidden = [
         "voice over",
@@ -85,6 +103,10 @@ def clean_text(text):
     return text.strip()
 
 
+# ==========================================================
+# MAIN
+# ==========================================================
+
 def main():
 
     print("================================")
@@ -94,6 +116,10 @@ def main():
     print(f"Voice ID: {VOICE_ID}")
     print(f"Model: {MODEL_ID}")
     print("================================")
+
+    # ------------------------------------------------------
+    # API KEYS
+    # ------------------------------------------------------
 
     api_keys = get_api_keys()
 
@@ -110,6 +136,10 @@ def main():
 
         sys.exit(1)
 
+    # ------------------------------------------------------
+    # SCRIPT FILE
+    # ------------------------------------------------------
+
     if not os.path.isfile(
         SCRIPT_FILE
     ):
@@ -124,9 +154,9 @@ def main():
         SCRIPT_FILE,
         "r",
         encoding="utf-8"
-    ) as f:
+    ) as file:
 
-        text = f.read().strip()
+        text = file.read().strip()
 
     if not text:
 
@@ -136,13 +166,25 @@ def main():
 
         sys.exit(1)
 
-    text = clean_text(text)
+    # ------------------------------------------------------
+    # CLEAN
+    # ------------------------------------------------------
+
+    text = clean_script(
+        text
+    )
+
+    # ------------------------------------------------------
+    # SCRIPT CHECK
+    # ------------------------------------------------------
 
     word_count = len(
         text.split()
     )
 
-    character_count = len(text)
+    character_count = len(
+        text
+    )
 
     print("")
     print("================================")
@@ -156,10 +198,15 @@ def main():
     )
     print("================================")
 
+    # ------------------------------------------------------
+    # WORD LIMIT
+    # ------------------------------------------------------
+
     if word_count < MIN_WORDS:
 
+        print("")
         print(
-            f"ERROR: Script is too short."
+            "ERROR: Script is too short."
         )
 
         print(
@@ -170,15 +217,24 @@ def main():
 
     if word_count > MAX_WORDS:
 
+        print("")
         print(
-            f"ERROR: Script is too long."
+            "ERROR: Script is too long."
         )
 
         print(
             f"Maximum words: {MAX_WORDS}"
         )
 
+        print(
+            "Voice generation cancelled."
+        )
+
         sys.exit(1)
+
+    # ------------------------------------------------------
+    # CHARACTER LIMIT
+    # ------------------------------------------------------
 
     print("")
     print("================================")
@@ -196,24 +252,47 @@ def main():
 
         print("")
         print(
-            "ERROR: Script exceeds the "
-            "ElevenLabs safety limit."
+            "ERROR: Script exceeds 350 characters."
         )
 
         print(
             "Voice generation cancelled."
         )
 
+        print(
+            "No ElevenLabs request was sent."
+        )
+
         sys.exit(1)
 
-    # Remove old file
+    print("")
+    print(
+        "Quota check: PASSED"
+    )
+
+    # ------------------------------------------------------
+    # REMOVE OLD AUDIO
+    # ------------------------------------------------------
+
     if os.path.isfile(
         OUTPUT_FILE
     ):
 
-        os.remove(
-            OUTPUT_FILE
-        )
+        try:
+
+            os.remove(
+                OUTPUT_FILE
+            )
+
+        except Exception as error:
+
+            print(
+                "ERROR removing old voice.mp3:"
+            )
+
+            print(error)
+
+            sys.exit(1)
 
     # ======================================================
     # MULTI KEY FAILOVER
@@ -240,21 +319,36 @@ def main():
             )
 
             audio = client.text_to_speech.convert(
+
                 voice_id=VOICE_ID,
+
                 model_id=MODEL_ID,
+
                 text=text,
+
                 output_format="mp3_44100_128",
             )
+
+            # --------------------------------------------------
+            # SAVE AUDIO
+            # --------------------------------------------------
 
             with open(
                 OUTPUT_FILE,
                 "wb"
-            ) as f:
+            ) as file:
 
                 for chunk in audio:
 
                     if chunk:
-                        f.write(chunk)
+
+                        file.write(
+                            chunk
+                        )
+
+            # --------------------------------------------------
+            # VERIFY
+            # --------------------------------------------------
 
             if not os.path.isfile(
                 OUTPUT_FILE
@@ -274,6 +368,10 @@ def main():
                     "voice.mp3 is empty."
                 )
 
+            # --------------------------------------------------
+            # SUCCESS
+            # --------------------------------------------------
+
             print("")
             print("================================")
             print("VOICE CREATED SUCCESSFULLY")
@@ -283,6 +381,12 @@ def main():
             )
             print(
                 f"Voice: {VOICE_NAME}"
+            )
+            print(
+                "Gender: Female"
+            )
+            print(
+                "Accent: American"
             )
             print(
                 f"Words: {word_count}"
@@ -296,13 +400,18 @@ def main():
             print(
                 f"File size: {file_size} bytes"
             )
+            print(
+                "Multi-key failover: ACTIVE"
+            )
             print("================================")
 
             return
 
-        except Exception as e:
+        except Exception as error:
 
-            error = str(e).lower()
+            error_text = str(
+                error
+            ).lower()
 
             print("")
             print("================================")
@@ -310,25 +419,41 @@ def main():
                 f"ELEVENLABS KEY {key_number} ERROR"
             )
             print("================================")
-            print(e)
+            print(error)
             print("================================")
 
+            # --------------------------------------------------
+            # QUOTA ERROR
+            # --------------------------------------------------
+
             quota_error = (
-                "quota" in error
+
+                "quota" in error_text
+
                 or
-                "quota_exceeded" in error
+
+                "quota_exceeded" in error_text
+
                 or
-                "credits" in error
+
+                "credits" in error_text
+
                 or
-                "credit" in error
+
+                "credit" in error_text
+
                 or
-                "rate limit" in error
+
+                "rate limit" in error_text
+
                 or
-                "too many requests" in error
+
+                "too many requests" in error_text
             )
 
             if quota_error:
 
+                print("")
                 print(
                     f"API KEY {key_number} "
                     "HAS NO USABLE QUOTA."
@@ -340,21 +465,40 @@ def main():
 
                 continue
 
+            # --------------------------------------------------
+            # INVALID KEY
+            # --------------------------------------------------
+
+            print("")
+            print(
+                f"API KEY {key_number} "
+                "FAILED."
+            )
+
             print(
                 "Trying next API key..."
             )
 
             continue
 
+    # ======================================================
+    # ALL KEYS FAILED
+    # ======================================================
+
     print("")
     print("================================")
     print("ALL ELEVENLABS KEYS FAILED")
     print("================================")
+    print("")
     print(
         "No voice.mp3 was created."
     )
+    print("")
     print(
         "Workflow stopped safely."
+    )
+    print(
+        "Video generation should not continue."
     )
     print("================================")
 
@@ -362,4 +506,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
