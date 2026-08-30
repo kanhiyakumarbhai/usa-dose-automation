@@ -4,61 +4,134 @@ on:
   workflow_dispatch:
 
   schedule:
+
+    # 06:00 AM IST
     - cron: "30 0 * * *"
+
+    # 06:00 PM IST
     - cron: "30 12 * * *"
+
 
 permissions:
   contents: write
 
+
 jobs:
+
   create-and-upload:
+
     runs-on: ubuntu-latest
 
     steps:
 
+      # ==================================================
+      # CHECKOUT
+      # ==================================================
+
       - name: Checkout repository
+
         uses: actions/checkout@v4
 
+
+      # ==================================================
+      # PYTHON
+      # ==================================================
+
       - name: Setup Python
+
         uses: actions/setup-python@v5
+
         with:
+
           python-version: "3.12"
 
+
+      # ==================================================
+      # SYSTEM PACKAGES
+      # ==================================================
+
       - name: Install FFmpeg and eSpeak
+
         run: |
+
           sudo apt-get update
-          sudo apt-get install -y ffmpeg espeak-ng
+
+          sudo apt-get install -y \
+            ffmpeg \
+            espeak-ng
+
+
+      # ==================================================
+      # PYTHON PACKAGES
+      # ==================================================
 
       - name: Install Python packages
+
         run: |
+
           python -m pip install --upgrade pip
-          pip install elevenlabs requests google-genai
-          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2
+
+          pip install elevenlabs
+          pip install requests
+          pip install google-genai
+
+          pip install google-api-python-client
+          pip install google-auth
+          pip install google-auth-oauthlib
+          pip install google-auth-httplib2
+
+
+      # ==================================================
+      # CHECK FILES
+      # ==================================================
 
       - name: Check project files
+
         run: |
+
           echo "================================"
           echo "PROJECT FILES"
           echo "================================"
 
           ls -lah
+
           echo ""
+
           ls -lah scripts || true
 
-          test -f daily_script.txt || exit 1
-          test -f scripts/generate_script.py || exit 1
-          test -f scripts/generate_voice.py || exit 1
-          test -f create_video.py || exit 1
-          test -f download_clips.py || exit 1
-          test -f upload_video.py || exit 1
+          echo ""
+
+          test -f daily_script.txt || true
+
+          test -f scripts/generate_script.py
+
+          test -f scripts/generate_voice.py
+
+          test -f create_video.py
+
+          test -f download_clips.py
+
+          test -f upload_video.py
+
+          echo ""
 
           echo "All required files found."
 
+
+      # ==================================================
+      # GEMINI SCRIPT
+      # ==================================================
+
       - name: Generate daily USA Dose script
+
         env:
+
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+
         run: |
+
           echo "================================"
           echo "GENERATING DAILY SCRIPT"
           echo "================================"
@@ -67,62 +140,131 @@ jobs:
 
           test -s daily_script.txt
 
-          echo "SCRIPT GENERATED"
-          wc -c daily_script.txt
+          test -s video_title.txt
 
-      - name: Generate female voice
+          test -s video_hashtags.txt
+
+          echo ""
+
+          echo "SCRIPT:"
+          cat daily_script.txt
+
+          echo ""
+
+          echo "TITLE:"
+          cat video_title.txt
+
+          echo ""
+
+          echo "HASHTAGS:"
+          cat video_hashtags.txt
+
+
+      # ==================================================
+      # LAURA FEMALE VOICE
+      # ==================================================
+
+      - name: Generate Laura Female Voice
+
         env:
-          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+
+          ELEVENLABS_API_KEY_1: ${{ secrets.ELEVENLABS_API_KEY_1 }}
+
+          ELEVENLABS_API_KEY_2: ${{ secrets.ELEVENLABS_API_KEY_2 }}
+
+          ELEVENLABS_API_KEY_3: ${{ secrets.ELEVENLABS_API_KEY_3 }}
+
+          ELEVENLABS_API_KEY_4: ${{ secrets.ELEVENLABS_API_KEY_4 }}
+
+          ELEVENLABS_API_KEY_5: ${{ secrets.ELEVENLABS_API_KEY_5 }}
+
         run: |
+
           echo "================================"
           echo "GENERATING FEMALE VOICE"
           echo "================================"
 
           python scripts/generate_voice.py
 
-          test -f voice.mp3
           test -s voice.mp3
+
+          echo ""
+
+          echo "VOICE CREATED"
 
           ls -lh voice.mp3
 
+
+      # ==================================================
+      # DOWNLOAD CLIPS
+      # ==================================================
+
       - name: Download moving stock clips
+
         env:
+
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+
         run: |
+
           echo "================================"
           echo "DOWNLOADING MOVING STOCK CLIPS"
           echo "================================"
 
           rm -rf clips
+
           mkdir -p clips
 
           python download_clips.py
 
-          CLIP_COUNT=$(find clips -maxdepth 1 -type f \
-            \( -name "*.mp4" -o -name "*.mov" \) | wc -l)
+          CLIP_COUNT=$(
+            find clips \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name "*.mp4" \
+              -o \
+              -name "*.mov" \
+            \) \
+            | wc -l
+          )
+
+          echo ""
 
           echo "Clip count: $CLIP_COUNT"
 
           if [ "$CLIP_COUNT" -lt 1 ]; then
+
             echo "ERROR: No video clips found"
+
             exit 1
+
           fi
 
+
+      # ==================================================
+      # CREATE VIDEO
+      # ==================================================
+
       - name: Create USA Dose Short
+
         run: |
+
           echo "================================"
           echo "CREATING USA DOSE SHORT"
           echo "================================"
 
           python create_video.py
 
-          if [ ! -f "usa_dose_short.mp4" ]; then
-            echo "ERROR: Video was not created"
-            exit 1
-          fi
+          test -s usa_dose_short.mp4
+
+          echo ""
 
           echo "FINAL VIDEO:"
+
           ls -lh usa_dose_short.mp4
+
+          echo ""
 
           ffprobe \
             -v error \
@@ -131,55 +273,91 @@ jobs:
             -of default=noprint_wrappers=1 \
             usa_dose_short.mp4 || true
 
-      - name: Upload Short to YouTube - PRIVATE ONLY
+
+      # ==================================================
+      # YOUTUBE UPLOAD
+      # ==================================================
+
+      - name: Upload Short to YouTube
+
         env:
+
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
 
-          # IMPORTANT:
-          # Video will NOT be published automatically.
-          # upload_video.py must use privacyStatus = private.
-          YOUTUBE_PRIVACY_STATUS: private
-
         run: |
+
           echo "================================"
-          echo "UPLOADING SHORT - PRIVATE"
+          echo "UPLOADING SHORT TO YOUTUBE"
           echo "================================"
 
           python upload_video.py
 
-          echo ""
-          echo "================================"
-          echo "UPLOAD COMPLETE"
-          echo "VIDEO IS PRIVATE"
-          echo "AUTOMATIC PUBLIC PUBLISHING IS OFF"
-          echo "================================"
+
+      # ==================================================
+      # SAVE FILES
+      # ==================================================
 
       - name: Save generated files
-        run: |
-          git config user.name "USA Dose Bot"
-          git config user.email "actions@users.noreply.github.com"
 
-          git add daily_script.txt voice.mp3 usa_dose_short.mp4 2>/dev/null || true
+        run: |
+
+          git config user.name "USA Dose Bot"
+
+          git config user.email \
+            "actions@users.noreply.github.com"
+
+          git add \
+            daily_script.txt \
+            video_title.txt \
+            video_hashtags.txt \
+            voice.mp3 \
+            usa_dose_short.mp4
 
           if git diff --cached --quiet; then
+
             echo "No changes to commit."
+
           else
-            git commit -m "Generate daily USA Dose video"
+
+            git commit \
+              -m "Daily USA Dose Short"
+
             git push
+
           fi
 
+
+      # ==================================================
+      # COMPLETE
+      # ==================================================
+
       - name: Automation complete
+
         run: |
+
           echo ""
           echo "================================"
           echo "USA DOSE AUTOMATION COMPLETE"
           echo "================================"
-          echo "Video created: YES"
-          echo "Voice: Female"
-          echo "Moving clips: YES"
-          echo "Captions: YES"
-          echo "YouTube upload: PRIVATE"
-          echo "Automatic PUBLIC: OFF"
+
+          echo "Gemini: ACTIVE"
+
+          echo "Laura Voice: ACTIVE"
+
+          echo "Multi API Failover: ACTIVE"
+
+          echo "HD Video: ACTIVE"
+
+          echo "Moving Clips: ACTIVE"
+
+          echo "Unique Title: ACTIVE"
+
+          echo "Hashtags: 7+"
+
+          echo "YouTube Upload: ACTIVE"
+
           echo "================================"
