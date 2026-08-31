@@ -206,7 +206,7 @@ jobs:
           echo "DOWNLOADING RELEVANT CLIPS"
           echo "================================"
 
-          python scripts/download_clips.py
+          python download_clips.py
 
 
       # ====================================================
