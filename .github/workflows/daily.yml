@@ -152,7 +152,7 @@ jobs:
           echo "GENERATING FEMALE VOICE"
           echo "================================"
 
-          python scripts/generate_voice.py
+          python create_video.py
 
 
       # ====================================================
