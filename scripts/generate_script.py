@@ -1,12 +1,15 @@
 import os
 import re
 import sys
+import time
+import random
 
 from google import genai
 
 
 # ==========================================================
 # USA DOSE - DAILY SCRIPT GENERATOR
+# ROBUST GEMINI RETRY + FALLBACK
 # ==========================================================
 
 SCRIPT_FILE = "daily_script.txt"
@@ -17,16 +20,49 @@ MIN_WORDS = 40
 MAX_WORDS = 55
 MAX_CHARACTERS = 350
 
+# Primary model + fallback models.
+# If your account does not support one model, the next
+# available model will be tried.
+MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+]
+
+MAX_RETRIES_PER_MODEL = 3
+
+BASE_RETRY_DELAY = 5
+
 API_KEY = (
     os.getenv("GEMINI_API_KEY")
     or os.getenv("GOOGLE_API_KEY")
 )
 
 if not API_KEY:
-    print("ERROR: GEMINI_API_KEY / GOOGLE_API_KEY is missing.")
+    print(
+        "ERROR: GEMINI_API_KEY / GOOGLE_API_KEY is missing."
+    )
     sys.exit(1)
 
-client = genai.Client(api_key=API_KEY)
+
+# ==========================================================
+# CLIENT
+# ==========================================================
+
+try:
+
+    client = genai.Client(
+        api_key=API_KEY,
+        http_options={
+            "timeout": 120000
+        }
+    )
+
+except Exception as error:
+
+    print("")
+    print("GEMINI CLIENT ERROR")
+    print(error)
+    sys.exit(1)
 
 
 # ==========================================================
@@ -45,7 +81,9 @@ FORBIDDEN = [
     "caption",
     "subtitle",
     "scene:",
+    "scene",
     "script:",
+    "script",
 ]
 
 
@@ -55,7 +93,11 @@ FORBIDDEN = [
 
 def clean_text(text):
 
+    if not text:
+        return ""
+
     for phrase in FORBIDDEN:
+
         text = re.sub(
             re.escape(phrase),
             "",
@@ -78,6 +120,9 @@ def clean_text(text):
 
 def extract_section(text, name):
 
+    if not text:
+        return ""
+
     pattern = (
         rf"{name}\s*:\s*(.*?)"
         rf"(?=\n[A-Z][A-Z _-]*\s*:|$)"
@@ -90,6 +135,7 @@ def extract_section(text, name):
     )
 
     if match:
+
         return match.group(1).strip()
 
     return ""
@@ -103,7 +149,7 @@ def extract_hashtags(text):
 
     tags = re.findall(
         r"#[A-Za-z0-9_]+",
-        text
+        text or ""
     )
 
     unique = []
@@ -111,11 +157,204 @@ def extract_hashtags(text):
     for tag in tags:
 
         if tag.lower() not in [
-            x.lower() for x in unique
+            x.lower()
+            for x in unique
         ]:
+
             unique.append(tag)
 
     return unique
+
+
+# ==========================================================
+# GEMINI RETRY DETECTION
+# ==========================================================
+
+def is_temporary_error(error):
+
+    message = str(error).lower()
+
+    temporary_words = [
+        "503",
+        "unavailable",
+        "server disconnected",
+        "connection reset",
+        "connection aborted",
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "internal server error",
+        "502",
+        "504",
+        "overloaded",
+        "high demand",
+    ]
+
+    return any(
+        word in message
+        for word in temporary_words
+    )
+
+
+# ==========================================================
+# GEMINI CALL
+# ==========================================================
+
+def call_gemini(prompt):
+
+    last_error = None
+
+    for model in MODELS:
+
+        print("")
+        print("================================")
+        print(
+            f"TRYING GEMINI MODEL: {model}"
+        )
+        print("================================")
+
+        for attempt in range(
+            1,
+            MAX_RETRIES_PER_MODEL + 1
+        ):
+
+            print(
+                f"Attempt {attempt}/"
+                f"{MAX_RETRIES_PER_MODEL}"
+            )
+
+            try:
+
+                # --------------------------------------------------
+                # Interactions API
+                # --------------------------------------------------
+
+                interaction = client.interactions.create(
+                    model=model,
+                    input=prompt
+                )
+
+                output = getattr(
+                    interaction,
+                    "output_text",
+                    None
+                )
+
+                if not output:
+
+                    # Some SDK versions expose output
+                    # differently. Fall back safely.
+                    output = str(
+                        interaction
+                    )
+
+                output = str(
+                    output
+                ).strip()
+
+                if not output:
+
+                    raise RuntimeError(
+                        "Gemini returned an empty response."
+                    )
+
+                print("")
+                print(
+                    f"Gemini success: {model}"
+                )
+
+                return output
+
+            except Exception as error:
+
+                last_error = error
+
+                print("")
+                print(
+                    f"GEMINI {model} ERROR:"
+                )
+                print(error)
+
+                temporary = (
+                    is_temporary_error(
+                        error
+                    )
+                )
+
+                # --------------------------------------------------
+                # RETRY TEMPORARY ERRORS
+                # --------------------------------------------------
+
+                if temporary and attempt < MAX_RETRIES_PER_MODEL:
+
+                    delay = (
+                        BASE_RETRY_DELAY
+                        * (2 ** (attempt - 1))
+                    )
+
+                    # Small random jitter so repeated
+                    # workflows do not all retry together.
+                    delay += random.uniform(
+                        0,
+                        2
+                    )
+
+                    print("")
+                    print(
+                        "Temporary Gemini/server error."
+                    )
+                    print(
+                        f"Retrying in "
+                        f"{delay:.1f} seconds..."
+                    )
+
+                    time.sleep(
+                        delay
+                    )
+
+                    continue
+
+                # --------------------------------------------------
+                # NON-TEMPORARY ERROR
+                # --------------------------------------------------
+
+                if not temporary:
+
+                    print("")
+                    print(
+                        "This does not look like a "
+                        "temporary connection error."
+                    )
+
+                    break
+
+        print("")
+        print(
+            f"Gemini model failed: {model}"
+        )
+
+        print(
+            "Trying next available model..."
+        )
+
+    print("")
+    print("================================")
+    print("ALL GEMINI MODELS FAILED")
+    print("================================")
+
+    if last_error:
+
+        print(
+            "Last error:"
+        )
+        print(
+            last_error
+        )
+
+    raise RuntimeError(
+        "Gemini generation failed after "
+        "all retries and fallback models."
+    )
 
 
 # ==========================================================
@@ -124,19 +363,33 @@ def extract_hashtags(text):
 
 def generate_content():
 
-    prompt = f"""
+    prompt = """
 You are the writer for a YouTube Shorts channel called USA Dose.
 
-Create ONE completely original and factual short video about the United States.
+Create ONE completely original and factual short video
+about the United States.
 
 Choose an interesting topic such as:
-US history, geography, unusual places, inventions,
-American culture, strange facts, landmarks, science,
-or surprising events.
 
-The topic should be different from previous videos when possible.
+US history,
+US geography,
+unusual American places,
+American inventions,
+American culture,
+strange facts,
+landmarks,
+science,
+surprising events,
+or little-known facts.
 
-IMPORTANT SCRIPT RULES:
+IMPORTANT:
+
+The topic should be substantially different from recent
+videos whenever possible.
+
+Do not use a generic repeated topic.
+
+SCRIPT RULES:
 
 - Write ONLY 40 to 55 spoken words.
 - NEVER exceed 55 words.
@@ -144,9 +397,10 @@ IMPORTANT SCRIPT RULES:
 - Aim for approximately 45-50 words.
 - Natural American English.
 - Strong hook in the first sentence.
-- Informative and entertaining.
+- Informative.
+- Entertaining.
 - Suitable for approximately 20-25 seconds.
-- The spoken script must contain ONLY words that Laura should speak.
+- The spoken script must contain ONLY words Laura should speak.
 - Do NOT include production instructions.
 - Do NOT include labels inside the script.
 - Do NOT write voice-over instructions.
@@ -168,17 +422,18 @@ script
 
 TITLE RULES:
 
-- Create one unique title.
+- Create ONE unique title.
 - Title must match the actual video topic.
 - Interesting but not misleading.
-- Do not use the same generic title repeatedly.
+- Do not use a generic repeated title.
+- Do not simply use "USA Dose" as the title.
 
 HASHTAG RULES:
 
-- At least 7 hashtags.
-- Relevant to the actual topic.
+- Create at least 7 hashtags.
+- Hashtags must be relevant to the actual topic.
 - Include #Shorts.
-- Do not use the exact same hashtag list every time.
+- Do not use exactly the same hashtag list every time.
 
 OUTPUT EXACTLY:
 
@@ -190,12 +445,9 @@ SCRIPT:
 <40-55 words and under 350 characters>
 """
 
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt
+    return call_gemini(
+        prompt
     )
-
-    return response.text.strip()
 
 
 # ==========================================================
@@ -211,7 +463,8 @@ STRICT RULES:
 
 - Keep the SAME factual topic.
 - Keep the important fact.
-- Make it natural American English.
+- Do not add new facts.
+- Natural American English.
 - Exactly 40-55 words.
 - UNDER 350 characters.
 - Target approximately 45-50 words.
@@ -221,23 +474,63 @@ STRICT RULES:
 - No labels.
 - No voice-over instructions.
 - No narration instructions.
-- Do not add new facts.
+- No production instructions.
+
+Return ONLY the final spoken narration.
 
 SCRIPT TO SHORTEN:
 
 {script}
-
-Return ONLY the final spoken narration.
 """
 
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt
+    result = call_gemini(
+        prompt
     )
 
     return clean_text(
-        response.text.strip()
+        result
     )
+
+
+# ==========================================================
+# VALIDATE SCRIPT
+# ==========================================================
+
+def validate_script(script):
+
+    script = clean_text(
+        script
+    )
+
+    words = len(
+        script.split()
+    )
+
+    characters = len(
+        script
+    )
+
+    if words < MIN_WORDS:
+
+        return False
+
+    if words > MAX_WORDS:
+
+        return False
+
+    if characters > MAX_CHARACTERS:
+
+        return False
+
+    lower_script = script.lower()
+
+    for phrase in FORBIDDEN:
+
+        if phrase in lower_script:
+
+            return False
+
+    return True
 
 
 # ==========================================================
@@ -249,10 +542,27 @@ def main():
     print("================================")
     print("USA DOSE SCRIPT GENERATOR")
     print("================================")
-    print("Model: Gemini 3.6 Flash")
-    print("Target: 40-55 words")
-    print("Character limit: 350")
-    print("Automatic shortening: ACTIVE")
+    print(
+        "Primary model: Gemini 3.6 Flash"
+    )
+    print(
+        "Fallback model: Gemini 3.7 Flash"
+    )
+    print(
+        f"Target: {MIN_WORDS}-{MAX_WORDS} words"
+    )
+    print(
+        f"Character limit: {MAX_CHARACTERS}"
+    )
+    print(
+        "Automatic shortening: ACTIVE"
+    )
+    print(
+        "Automatic retry: ACTIVE"
+    )
+    print(
+        "Model fallback: ACTIVE"
+    )
     print("================================")
 
     # ------------------------------------------------------
@@ -263,13 +573,18 @@ def main():
 
         result = generate_content()
 
-    except Exception as e:
+    except Exception as error:
 
         print("")
         print("================================")
-        print("GEMINI ERROR")
+        print("GEMINI GENERATION FAILED")
         print("================================")
-        print(e)
+        print(error)
+        print("")
+        print(
+            "Voice/video generation will NOT continue."
+        )
+
         sys.exit(1)
 
     # ------------------------------------------------------
@@ -304,18 +619,31 @@ def main():
     )
 
     if not title:
-        print("ERROR: Title was not generated.")
+
+        print(
+            "ERROR: Title was not generated."
+        )
+
         sys.exit(1)
 
     if not script:
-        print("ERROR: Script was not generated.")
+
+        print(
+            "ERROR: Script was not generated."
+        )
+
         sys.exit(1)
 
     # ------------------------------------------------------
     # AUTOMATIC SHORTENING
     # ------------------------------------------------------
 
-    for attempt in range(1, 4):
+    validation_passed = False
+
+    for attempt in range(
+        1,
+        4
+    ):
 
         word_count = len(
             script.split()
@@ -328,7 +656,8 @@ def main():
         print("")
         print("================================")
         print(
-            f"SCRIPT VALIDATION ATTEMPT {attempt}"
+            f"SCRIPT VALIDATION "
+            f"ATTEMPT {attempt}"
         )
         print("================================")
         print(
@@ -339,13 +668,17 @@ def main():
         )
         print("================================")
 
-        if (
-            MIN_WORDS <= word_count <= MAX_WORDS
-            and
-            character_count <= MAX_CHARACTERS
+        if validate_script(
+            script
         ):
+
             print("")
-            print("SCRIPT VALIDATION: PASSED")
+            print(
+                "SCRIPT VALIDATION: PASSED"
+            )
+
+            validation_passed = True
+
             break
 
         print("")
@@ -362,16 +695,17 @@ def main():
                 script
             )
 
-        except Exception as e:
+        except Exception as error:
 
             print("")
             print(
                 "ERROR while shortening script:"
             )
-            print(e)
+            print(error)
+
             sys.exit(1)
 
-    else:
+    if not validation_passed:
 
         print("")
         print("================================")
@@ -381,13 +715,18 @@ def main():
             "Could not create a safe-length script."
         )
         print(
-            "Voice generation should not continue."
+            "Voice generation should NOT continue."
         )
+
         sys.exit(1)
 
     # ------------------------------------------------------
     # FINAL CHECK
     # ------------------------------------------------------
+
+    script = clean_text(
+        script
+    )
 
     word_count = len(
         script.split()
@@ -397,36 +736,16 @@ def main():
         script
     )
 
-    if word_count < MIN_WORDS:
-        print("ERROR: Final script is too short.")
-        sys.exit(1)
+    if not validate_script(
+        script
+    ):
 
-    if word_count > MAX_WORDS:
-        print("ERROR: Final script is still too long.")
-        sys.exit(1)
-
-    if character_count > MAX_CHARACTERS:
+        print("")
         print(
-            "ERROR: Final script still exceeds 350 characters."
+            "ERROR: Final script failed safety validation."
         )
+
         sys.exit(1)
-
-    # ------------------------------------------------------
-    # FORBIDDEN CHECK
-    # ------------------------------------------------------
-
-    lower_script = script.lower()
-
-    for phrase in FORBIDDEN:
-
-        if phrase in lower_script:
-
-            print("")
-            print(
-                "ERROR: Forbidden production text found:"
-            )
-            print(phrase)
-            sys.exit(1)
 
     # ------------------------------------------------------
     # HASHTAG SAFETY
@@ -441,55 +760,78 @@ def main():
             "#Shorts"
         )
 
+    # Remove duplicate hashtags.
+    final_hashtags = []
+
+    for tag in hashtags:
+
+        if tag.lower() not in [
+            x.lower()
+            for x in final_hashtags
+        ]:
+
+            final_hashtags.append(
+                tag
+            )
+
+    hashtags = final_hashtags
+
     if len(hashtags) < 7:
 
         print("")
         print(
             "ERROR: Fewer than 7 hashtags."
         )
+
         sys.exit(1)
 
     # ------------------------------------------------------
     # SAVE SCRIPT
     # ------------------------------------------------------
 
-    with open(
-        SCRIPT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
+    try:
 
-        f.write(
-            script
+        with open(
+            SCRIPT_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            file.write(
+                script
+            )
+
+        with open(
+            TITLE_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            file.write(
+                title
+            )
+
+        with open(
+            HASHTAGS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            file.write(
+                " ".join(
+                    hashtags
+                )
+            )
+
+    except Exception as error:
+
+        print("")
+        print(
+            "ERROR SAVING GENERATED CONTENT"
         )
+        print(error)
 
-    # ------------------------------------------------------
-    # SAVE TITLE
-    # ------------------------------------------------------
-
-    with open(
-        TITLE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            title
-        )
-
-    # ------------------------------------------------------
-    # SAVE HASHTAGS
-    # ------------------------------------------------------
-
-    with open(
-        HASHTAGS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            " ".join(hashtags)
-        )
+        sys.exit(1)
 
     # ------------------------------------------------------
     # FINAL OUTPUT
@@ -506,7 +848,11 @@ def main():
 
     print("")
     print("HASHTAGS:")
-    print(" ".join(hashtags))
+    print(
+        " ".join(
+            hashtags
+        )
+    )
 
     print("")
     print("SCRIPT:")
@@ -525,9 +871,18 @@ def main():
     print(
         f"Hashtags: {len(hashtags)}"
     )
-    print("Voice safety: PASSED")
+    print(
+        "Voice safety: PASSED"
+    )
+    print(
+        "Gemini retry protection: ACTIVE"
+    )
+    print(
+        "Gemini model fallback: ACTIVE"
+    )
     print("================================")
 
 
 if __name__ == "__main__":
+
     main()
