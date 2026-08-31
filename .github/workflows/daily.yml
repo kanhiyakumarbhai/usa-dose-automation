@@ -2,87 +2,142 @@ name: USA Dose Daily Automation
 
 on:
   workflow_dispatch:
+
   schedule:
-    - cron: "30 4 * * *"
+    # Every day at 9:00 PM IST
+    # 15:30 UTC = 9:00 PM IST
+    - cron: "30 15 * * *"
 
 permissions:
   contents: write
 
 jobs:
-  generate-video:
+
+  build-video:
+
     runs-on: ubuntu-latest
+
+    timeout-minutes: 15
 
     steps:
 
-      # =====================================================
+      # ==================================================
       # CHECKOUT
-      # =====================================================
+      # ==================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # =====================================================
+      # ==================================================
       # PYTHON
-      # =====================================================
+      # ==================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # =====================================================
-      # INSTALL DEPENDENCIES
-      # =====================================================
+      # ==================================================
+      # FFMPEG
+      # IMPORTANT - fixes ffprobe error
+      # ==================================================
 
-      - name: Install dependencies
+      - name: Install FFmpeg
         run: |
+          echo "================================"
+          echo "INSTALLING FFMPEG"
+          echo "================================"
+
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+          echo ""
+          echo "Checking ffmpeg..."
+          ffmpeg -version
+
+          echo ""
+          echo "Checking ffprobe..."
+          ffprobe -version
+
+          echo ""
+          echo "FFmpeg installation PASSED"
+          echo "================================"
+
+      # ==================================================
+      # PYTHON DEPENDENCIES
+      # ==================================================
+
+      - name: Install Python dependencies
+        run: |
+          echo "================================"
+          echo "INSTALLING PYTHON DEPENDENCIES"
+          echo "================================"
+
           python -m pip install --upgrade pip
 
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
 
-          pip install google-genai
-          pip install elevenlabs
           pip install edge-tts
-          pip install requests
-          pip install moviepy
-          pip install imageio
-          pip install imageio-ffmpeg
 
-      # =====================================================
-      # CHECK FILES
-      # =====================================================
+          echo ""
+          echo "Python dependencies installed."
+          echo "================================"
+
+      # ==================================================
+      # CHECK REQUIRED FILES
+      # ==================================================
 
       - name: Check project files
         run: |
           echo "================================"
-          echo "PROJECT FILE CHECK"
+          echo "CHECKING PROJECT FILES"
           echo "================================"
 
-          echo "Current directory:"
+          echo ""
+          echo "Repository:"
           pwd
 
           echo ""
-          echo "Root files:"
-          ls -la
-
-          echo ""
-          echo "Scripts directory:"
-          if [ -d scripts ]; then
-            ls -la scripts
-          else
-            echo "scripts directory does not exist"
-          fi
+          echo "Files:"
+          find . -maxdepth 3 -type f | sort
 
           echo ""
           echo "================================"
 
-      # =====================================================
+          test -f create_video.py || {
+            echo "ERROR: create_video.py not found."
+            exit 1
+          }
+
+          echo "create_video.py: OK"
+
+          if [ -f scripts/generate_script.py ]; then
+            echo "scripts/generate_script.py: OK"
+          fi
+
+          if [ -f scripts/generate_voice.py ]; then
+            echo "scripts/generate_voice.py: OK"
+          fi
+
+          if [ -f generate_script.py ]; then
+            echo "generate_script.py: OK"
+          fi
+
+          if [ -f generate_voice.py ]; then
+            echo "generate_voice.py: OK"
+          fi
+
+          echo ""
+          echo "Project file check PASSED."
+          echo "================================"
+
+      # ==================================================
       # GENERATE DAILY SCRIPT
-      # =====================================================
+      # ==================================================
 
       - name: Generate daily script
         env:
@@ -94,41 +149,41 @@ jobs:
           echo "GENERATING DAILY SCRIPT"
           echo "================================"
 
-          python scripts/generate_script.py
+          if [ -f scripts/generate_script.py ]; then
 
-      # =====================================================
-      # VERIFY SCRIPT
-      # =====================================================
+            python scripts/generate_script.py
 
-      - name: Verify generated content
-        run: |
+          elif [ -f generate_script.py ]; then
 
-          echo "================================"
-          echo "VERIFYING GENERATED CONTENT"
-          echo "================================"
+            python generate_script.py
 
-          test -s daily_script.txt
-          test -s video_title.txt
-          test -s video_hashtags.txt
+          else
+
+            echo "ERROR: Script generator not found."
+            exit 1
+
+          fi
 
           echo ""
-          echo "SCRIPT:"
+          echo "================================"
+          echo "SCRIPT GENERATION FINISHED"
+          echo "================================"
+
+          test -f daily_script.txt || {
+            echo "ERROR: daily_script.txt was not created."
+            exit 1
+          }
+
+          echo ""
+          echo "Generated script:"
           cat daily_script.txt
 
           echo ""
-          echo "TITLE:"
-          cat video_title.txt
+          echo "================================"
 
-          echo ""
-          echo "HASHTAGS:"
-          cat video_hashtags.txt
-
-          echo ""
-          echo "CONTENT CHECK PASSED"
-
-      # =====================================================
-      # GENERATE FEMALE VOICE
-      # =====================================================
+      # ==================================================
+      # GENERATE VOICE
+      # ==================================================
 
       - name: Generate female voice
         env:
@@ -142,31 +197,52 @@ jobs:
           echo "GENERATING FEMALE VOICE"
           echo "================================"
 
-          python scripts/generate_voice.py
+          if [ -f scripts/generate_voice.py ]; then
 
-      # =====================================================
-      # VERIFY VOICE
-      # =====================================================
+            python scripts/generate_voice.py
 
-      - name: Verify voice
-        run: |
+          elif [ -f generate_voice.py ]; then
 
-          echo "================================"
-          echo "VERIFYING VOICE"
-          echo "================================"
+            python generate_voice.py
 
-          if [ ! -s voice.mp3 ]; then
-            echo "ERROR: voice.mp3 was not created."
+          else
+
+            echo "ERROR: generate_voice.py not found."
             exit 1
+
           fi
 
-          ls -lh voice.mp3
+          echo ""
+          echo "================================"
+          echo "VOICE CHECK"
+          echo "================================"
 
-          echo "VOICE CHECK PASSED"
+          test -f voice.mp3 || {
+            echo "ERROR: voice.mp3 was not created."
+            exit 1
+          }
 
-      # =====================================================
-      # DOWNLOAD RELEVANT CLIPS
-      # =====================================================
+          test -s voice.mp3 || {
+            echo "ERROR: voice.mp3 is empty."
+            exit 1
+          }
+
+          echo "voice.mp3 created successfully."
+
+          echo ""
+          echo "Voice duration:"
+          ffprobe \
+            -v error \
+            -show_entries format=duration \
+            -of default=noprint_wrappers=1:nokey=1 \
+            voice.mp3
+
+          echo ""
+          echo "================================"
+
+      # ==================================================
+      # DOWNLOAD VIDEO CLIPS
+      # ==================================================
 
       - name: Download relevant clips
         env:
@@ -177,84 +253,155 @@ jobs:
           echo "DOWNLOADING RELEVANT CLIPS"
           echo "================================"
 
-          # download_clips.py is in ROOT, not scripts/
-          python download_clips.py
+          if [ -f scripts/download_clips.py ]; then
 
-      # =====================================================
-      # VERIFY CLIPS
-      # =====================================================
+            python scripts/download_clips.py
 
-      - name: Verify downloaded clips
-        run: |
+          elif [ -f download_clips.py ]; then
 
-          echo "================================"
-          echo "VERIFYING VIDEO CLIPS"
-          echo "================================"
+            python download_clips.py
 
-          echo "Searching for video files..."
+          else
 
-          find . -type f \( \
-            -iname "*.mp4" -o \
-            -iname "*.mov" -o \
-            -iname "*.mkv" \
-          \) -not -path "./.git/*" -print
-
-          CLIP_COUNT=$(find . -type f \( \
-            -iname "*.mp4" -o \
-            -iname "*.mov" -o \
-            -iname "*.mkv" \
-          \) -not -path "./.git/*" | wc -l)
-
-          echo ""
-          echo "Video files found: $CLIP_COUNT"
-
-          if [ "$CLIP_COUNT" -eq 0 ]; then
-            echo ""
-            echo "ERROR: No video clips were downloaded."
-            echo "Video generation stopped safely."
+            echo "ERROR: download_clips.py not found."
             exit 1
+
           fi
 
           echo ""
-          echo "CLIP CHECK PASSED"
+          echo "================================"
+          echo "CLIP CHECK"
+          echo "================================"
 
-      # =====================================================
-      # CREATE HD VIDEO
-      # =====================================================
+          if [ -d clips ]; then
 
-      - name: Create HD video
+            echo "Clips directory found."
+
+            find clips -type f -maxdepth 2 -print
+
+          elif [ -d video_clips ]; then
+
+            echo "video_clips directory found."
+
+            find video_clips -type f -maxdepth 2 -print
+
+          else
+
+            echo "ERROR: No clips directory found."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "================================"
+
+      # ==================================================
+      # CREATE VIDEO
+      # ==================================================
+
+      - name: Create USA Dose HD video
         run: |
 
           echo "================================"
           echo "CREATING USA DOSE HD VIDEO"
           echo "================================"
 
+          echo ""
+          echo "FFmpeg:"
+          command -v ffmpeg
+
+          echo ""
+          echo "FFprobe:"
+          command -v ffprobe
+
+          echo ""
+          echo "Voice file:"
+          ls -lh voice.mp3
+
+          echo ""
+          echo "Starting video creator..."
+          echo "================================"
+
           python create_video.py
 
-      # =====================================================
-      # VERIFY VIDEO
-      # =====================================================
-
-      - name: Verify final video
-        run: |
-
+          echo ""
           echo "================================"
-          echo "VERIFYING FINAL VIDEO"
+          echo "VIDEO CREATION FINISHED"
           echo "================================"
 
-          if [ ! -s usa_dose_short.mp4 ]; then
+          test -f usa_dose_short.mp4 || {
             echo "ERROR: usa_dose_short.mp4 was not created."
             exit 1
-          fi
+          }
 
+          test -s usa_dose_short.mp4 || {
+            echo "ERROR: usa_dose_short.mp4 is empty."
+            exit 1
+          }
+
+          echo ""
+          echo "Video created successfully:"
           ls -lh usa_dose_short.mp4
 
           echo ""
-          echo "VIDEO CHECK PASSED"
+          echo "Video information:"
+          ffprobe \
+            -v error \
+            -show_entries \
+            format=duration,size \
+            -of default=noprint_wrappers=1 \
+            usa_dose_short.mp4
 
-      # =====================================================
-      # UPLOAD TO YOUTUBE AS PRIVATE
-      # =====================================================
+          echo ""
+          echo "================================"
+
+      # ==================================================
+      # CHECK TITLE + HASHTAGS
+      # ==================================================
+
+      - name: Check YouTube metadata
+        run: |
+
+          echo "================================"
+          echo "CHECKING VIDEO METADATA"
+          echo "================================"
+
+          if [ -f video_title.txt ]; then
+
+            echo ""
+            echo "TITLE:"
+            cat video_title.txt
+
+          else
+
+            echo ""
+            echo "WARNING: video_title.txt not found."
+
+          fi
+
+          if [ -f video_hashtags.txt ]; then
+
+            echo ""
+            echo "HASHTAGS:"
+            cat video_hashtags.txt
+
+            echo ""
+            echo "Hashtag count:"
+            grep -o '#[A-Za-z0-9_]*' video_hashtags.txt | wc -l
+
+          else
+
+            echo ""
+            echo "WARNING: video_hashtags.txt not found."
+
+          fi
+
+          echo ""
+          echo "================================"
+
+      # ==================================================
+      # UPLOAD TO YOUTUBE
+      # ==================================================
 
       - name: Upload video to YouTube
         env:
@@ -267,45 +414,61 @@ jobs:
           echo "UPLOADING TO YOUTUBE"
           echo "================================"
 
-          python upload_video.py
+          if [ -f upload_video.py ]; then
 
-      # =====================================================
-      # SAVE GENERATED CONTENT
-      # =====================================================
+            python upload_video.py
 
-      - name: Commit generated content
+          elif [ -f scripts/upload_video.py ]; then
+
+            python scripts/upload_video.py
+
+          else
+
+            echo "ERROR: upload_video.py not found."
+            exit 1
+
+          fi
+
+          echo ""
+          echo "================================"
+          echo "YOUTUBE UPLOAD FINISHED"
+          echo "================================"
+
+      # ==================================================
+      # SAVE GENERATED FILES
+      # ==================================================
+
+      - name: Commit generated metadata
         run: |
 
-          git config user.name "USA Dose Automation"
-          git config user.email "actions@users.noreply.github.com"
+          echo "================================"
+          echo "SAVING GENERATED FILES"
+          echo "================================"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
             daily_script.txt \
             video_title.txt \
-            video_hashtags.txt
+            video_hashtags.txt \
+            voice.mp3 \
+            usa_dose_short.mp4 \
+            2>/dev/null || true
 
-          git diff --cached --quiet || \
-            git commit -m "Generate daily USA Dose content"
+          if git diff --cached --quiet; then
 
-          git push || true
+            echo "No changes to commit."
 
-      # =====================================================
-      # FINAL
-      # =====================================================
+          else
 
-      - name: Automation complete
-        run: |
+            git commit -m "Generate daily USA Dose video"
 
+            git push
+
+          fi
+
+          echo ""
           echo "================================"
-          echo "USA DOSE AUTOMATION COMPLETE"
-          echo "================================"
-
-          echo "Script: READY"
-          echo "Female voice: READY"
-          echo "Video clips: READY"
-          echo "HD video: READY"
-          echo "Title: READY"
-          echo "Hashtags: READY"
-          echo "YouTube upload: PRIVATE"
-
+          echo "AUTOMATION COMPLETED"
           echo "================================"
