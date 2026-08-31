@@ -131,14 +131,34 @@ jobs:
 
           python upload_video.py
 
-      - name: Save generated files
+            - name: Save generated files
         if: always()
         run: |
+          echo "================================"
+          echo "SAVING GENERATED FILES"
+          echo "================================"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add daily_script.txt video_title.txt video_hashtags.txt
+          # Add files only if they actually exist
+          for file in daily_script.txt video_title.txt video_hashtags.txt voice.mp3 usa_dose_short.mp4; do
+            if [ -f "$file" ]; then
+              echo "Adding: $file"
+              git add "$file"
+            else
+              echo "Not found: $file"
+            fi
+          done
 
-          git diff --cached --quiet || git commit -m "Generate daily USA Dose content"
+          # Commit only when something is staged
+          if git diff --cached --quiet; then
+            echo "No files to commit."
+          else
+            git commit -m "Generate daily USA Dose content"
+            git push || true
+          fi
 
-          git push || true
+          echo "================================"
+          echo "SAVE STEP FINISHED"
+          echo "================================"
