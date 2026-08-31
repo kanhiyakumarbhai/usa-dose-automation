@@ -1,9 +1,13 @@
 google-genai
 elevenlabs
+edge-tts
 requests
 moviepy
 Pillow
 numpy
 imageio
 imageio-ffmpeg
-edge-tts
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
