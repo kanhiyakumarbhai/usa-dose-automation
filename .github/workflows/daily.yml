@@ -15,8 +15,17 @@ jobs:
 
     steps:
 
+      # ==================================================
+      # CHECKOUT
+      # ==================================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # ==================================================
+      # PYTHON
+      # ==================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -24,23 +33,67 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+
+      # ==================================================
+      # SYSTEM DEPENDENCIES
+      # ==================================================
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+          echo "================================"
+          echo "FFMPEG CHECK"
+          echo "================================"
+
+          ffmpeg -version
+          ffprobe -version
+
+
+      # ==================================================
+      # PYTHON DEPENDENCIES
+      # ==================================================
+
       - name: Install Python dependencies
         run: |
+          echo "================================"
+          echo "INSTALLING PYTHON PACKAGES"
+          echo "================================"
+
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          else
+            echo "requirements.txt not found."
+            exit 1
+          fi
+
+
+      # ==================================================
+      # PACKAGE CHECK
+      # ==================================================
 
       - name: Check Python packages
         run: |
+          echo "================================"
+          echo "CHECKING PYTHON PACKAGES"
+          echo "================================"
+
           python -c "from google import genai; print('google-genai: OK')"
           python -c "from elevenlabs.client import ElevenLabs; print('elevenlabs: OK')"
           python -c "import requests; print('requests: OK')"
-          ffmpeg -version
-          ffprobe -version
+          python -c "import PIL; print('Pillow: OK')"
+
+          echo "================================"
+          echo "ALL REQUIRED PACKAGES OK"
+          echo "================================"
+
+
+      # ==================================================
+      # GENERATE DAILY SCRIPT
+      # ==================================================
 
       - name: Generate daily script
         env:
@@ -53,16 +106,39 @@ jobs:
 
           python scripts/generate_script.py
 
+
+      # ==================================================
+      # CHECK SCRIPT
+      # ==================================================
+
       - name: Check generated script
         run: |
-          test -f daily_script.txt
-          test -s daily_script.txt
-
           echo "================================"
-          echo "SCRIPT CREATED"
+          echo "CHECKING GENERATED CONTENT"
           echo "================================"
 
+          if [ ! -f daily_script.txt ]; then
+            echo "ERROR: daily_script.txt was not created."
+            exit 1
+          fi
+
+          if [ ! -s daily_script.txt ]; then
+            echo "ERROR: daily_script.txt is empty."
+            exit 1
+          fi
+
+          echo "SCRIPT:"
           cat daily_script.txt
+
+          echo ""
+          echo "================================"
+          echo "SCRIPT CHECK PASSED"
+          echo "================================"
+
+
+      # ==================================================
+      # GENERATE FEMALE VOICE
+      # ==================================================
 
       - name: Generate female voice
         env:
@@ -75,18 +151,41 @@ jobs:
 
           python scripts/generate_voice.py
 
-          test -f voice.mp3
-          test -s voice.mp3
+          if [ ! -f voice.mp3 ]; then
+            echo "ERROR: voice.mp3 was not created."
+            exit 1
+          fi
+
+          if [ ! -s voice.mp3 ]; then
+            echo "ERROR: voice.mp3 is empty."
+            exit 1
+          fi
+
+          echo "================================"
+          echo "VOICE CREATED SUCCESSFULLY"
+          echo "================================"
+
+
+      # ==================================================
+      # DOWNLOAD VIDEO CLIPS
+      # ==================================================
 
       - name: Download video clips
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           echo "================================"
-          echo "DOWNLOADING VIDEO CLIPS"
+          echo "DOWNLOADING RELEVANT CLIPS"
           echo "================================"
 
+          mkdir -p clips
+
           python download_clips.py
+
+
+      # ==================================================
+      # CHECK VIDEO CLIPS
+      # ==================================================
 
       - name: Check video clips
         run: |
@@ -96,14 +195,28 @@ jobs:
 
           mkdir -p clips
 
-          COUNT=$(find clips -type f \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" \) | wc -l)
+          COUNT=$(find clips -type f \
+            \( -iname "*.mp4" \
+            -o -iname "*.mov" \
+            -o -iname "*.webm" \
+            -o -iname "*.mkv" \) | wc -l)
 
           echo "Video clips found: $COUNT"
 
           if [ "$COUNT" -eq 0 ]; then
             echo "ERROR: No video clips found."
+            echo "Video creation cannot continue."
             exit 1
           fi
+
+          echo "================================"
+          echo "VIDEO CLIPS CHECK PASSED"
+          echo "================================"
+
+
+      # ==================================================
+      # CREATE VIDEO
+      # ==================================================
 
       - name: Create USA Dose video
         run: |
@@ -115,8 +228,45 @@ jobs:
 
           python create_video.py
 
-          test -f usa_dose_short.mp4
-          test -s usa_dose_short.mp4
+          if [ ! -f usa_dose_short.mp4 ]; then
+            echo "ERROR: usa_dose_short.mp4 was not created."
+            exit 1
+          fi
+
+          if [ ! -s usa_dose_short.mp4 ]; then
+            echo "ERROR: usa_dose_short.mp4 is empty."
+            exit 1
+          fi
+
+          echo "================================"
+          echo "VIDEO CREATED SUCCESSFULLY"
+          echo "================================"
+
+
+      # ==================================================
+      # CHECK VIDEO
+      # ==================================================
+
+      - name: Check final video
+        run: |
+          echo "================================"
+          echo "CHECKING FINAL VIDEO"
+          echo "================================"
+
+          ffprobe \
+            -v error \
+            -show_entries format=duration \
+            -of default=noprint_wrappers=1 \
+            usa_dose_short.mp4
+
+          echo "================================"
+          echo "FINAL VIDEO CHECK PASSED"
+          echo "================================"
+
+
+      # ==================================================
+      # UPLOAD TO YOUTUBE
+      # ==================================================
 
       - name: Upload video to YouTube
         if: success()
@@ -131,7 +281,12 @@ jobs:
 
           python upload_video.py
 
-            - name: Save generated files
+
+      # ==================================================
+      # SAVE GENERATED FILES
+      # ==================================================
+
+      - name: Save generated files
         if: always()
         run: |
           echo "================================"
@@ -141,8 +296,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Add files only if they actually exist
-          for file in daily_script.txt video_title.txt video_hashtags.txt voice.mp3 usa_dose_short.mp4; do
+          # ----------------------------------------------
+          # Add files only when they exist
+          # ----------------------------------------------
+
+          for file in \
+            daily_script.txt \
+            video_title.txt \
+            video_hashtags.txt
+          do
             if [ -f "$file" ]; then
               echo "Adding: $file"
               git add "$file"
@@ -151,14 +313,42 @@ jobs:
             fi
           done
 
-          # Commit only when something is staged
+          # ----------------------------------------------
+          # Commit only if something changed
+          # ----------------------------------------------
+
           if git diff --cached --quiet; then
-            echo "No files to commit."
+            echo "No generated content changes to commit."
           else
             git commit -m "Generate daily USA Dose content"
-            git push || true
+
+            git push || echo "Git push failed or nothing new to push."
           fi
 
           echo "================================"
           echo "SAVE STEP FINISHED"
+          echo "================================"
+
+
+      # ==================================================
+      # FINAL STATUS
+      # ==================================================
+
+      - name: Workflow summary
+        if: always()
+        run: |
+          echo "================================"
+          echo "USA DOSE AUTOMATION FINISHED"
+          echo "================================"
+
+          echo ""
+          echo "Generated files:"
+
+          [ -f daily_script.txt ] && echo "OK: daily_script.txt" || echo "MISSING: daily_script.txt"
+          [ -f video_title.txt ] && echo "OK: video_title.txt" || echo "MISSING: video_title.txt"
+          [ -f video_hashtags.txt ] && echo "OK: video_hashtags.txt" || echo "MISSING: video_hashtags.txt"
+          [ -f voice.mp3 ] && echo "OK: voice.mp3" || echo "MISSING: voice.mp3"
+          [ -f usa_dose_short.mp4 ] && echo "OK: usa_dose_short.mp4" || echo "MISSING: usa_dose_short.mp4"
+
+          echo ""
           echo "================================"
