@@ -1,168 +1,722 @@
 import os
 import sys
-import requests
+import re
 import random
+import time
+import requests
+
+
+# ==========================================================
+# USA DOSE - SMART PEXELS CLIP DOWNLOADER
+# ==========================================================
 
 OUTPUT_DIR = "clips"
-API_KEY = os.getenv("PEXELS_API_KEY")
+SCRIPT_FILE = "daily_script.txt"
 
-if not API_KEY:
-    print("ERROR: PEXELS_API_KEY is missing")
-    sys.exit(1)
+PEXELS_API_URL = "https://api.pexels.com/videos/search"
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+MAX_CLIPS = 6
+MIN_CLIPS = 3
 
-# USA-related searches.
-queries = [
-    "United States America city",
-    "New York USA",
-    "American highway",
-    "USA city skyline",
-    "American people",
-    "United States business",
-    "American technology",
-    "Washington DC USA",
-    "Los Angeles USA",
-    "Chicago USA",
-]
+REQUEST_TIMEOUT = 30
+DOWNLOAD_TIMEOUT = 90
 
-random.shuffle(queries)
 
-headers = {
-    "Authorization": API_KEY
-}
+# ==========================================================
+# HELPERS
+# ==========================================================
 
-print("================================")
-print("Downloading USA Stock Videos")
-print("================================")
+def clean_query(text):
 
-downloaded = 0
+    text = re.sub(
+        r"[^a-zA-Z0-9\s]",
+        " ",
+        text
+    )
 
-for query in queries:
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
-    if downloaded >= 5:
-        break
+    words = text.strip().split()
 
-    print()
-    print("Searching:", query)
+    # Keep search query reasonably short.
+    words = words[:8]
 
-    try:
-        response = requests.get(
-            "https://api.pexels.com/videos/search",
-            headers=headers,
-            params={
-                "query": query,
-                "orientation": "portrait",
-                "size": "medium",
-                "per_page": 10
-            },
-            timeout=30
-        )
-    except Exception as e:
-        print("Request error:", e)
-        continue
+    return " ".join(words)
 
-    if response.status_code != 200:
-        print("Pexels error:", response.status_code)
-        print(response.text)
-        continue
 
-    videos = response.json().get("videos", [])
+def read_script():
 
-    if not videos:
-        print("No videos found.")
-        continue
+    if not os.path.isfile(SCRIPT_FILE):
 
-    random.shuffle(videos)
+        print("")
+        print("ERROR: daily_script.txt not found.")
+        print("")
+        sys.exit(1)
 
-    for video in videos:
+    with open(
+        SCRIPT_FILE,
+        "r",
+        encoding="utf-8"
+    ) as file:
 
-        if downloaded >= 5:
-            break
+        text = file.read().strip()
 
-        files = video.get("video_files", [])
+    if not text:
 
-        # Prefer portrait files.
-        suitable = []
+        print("")
+        print("ERROR: daily_script.txt is empty.")
+        print("")
+        sys.exit(1)
 
-        for file in files:
-            width = file.get("width") or 0
-            height = file.get("height") or 0
-            link = file.get("link")
+    return text
 
-            if not link:
-                continue
 
-            if height > width:
-                suitable.append(file)
+def build_queries(script):
 
-        # If no portrait file exists, use the best available file.
-        if not suitable:
-            suitable = [
-                f for f in files
-                if f.get("link")
-            ]
+    # Extract useful words from the daily script.
+    words = re.findall(
+        r"[A-Za-z]{4,}",
+        script.lower()
+    )
 
-        if not suitable:
+    stopwords = {
+        "about",
+        "after",
+        "again",
+        "also",
+        "because",
+        "being",
+        "could",
+        "daily",
+        "every",
+        "from",
+        "have",
+        "into",
+        "just",
+        "more",
+        "most",
+        "only",
+        "over",
+        "said",
+        "some",
+        "that",
+        "than",
+        "their",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "today",
+        "very",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "with",
+        "would",
+        "your",
+        "news",
+    }
+
+    useful = []
+
+    for word in words:
+
+        if word in stopwords:
             continue
 
-        # Prefer smaller files for GitHub Actions.
-        suitable.sort(
-            key=lambda f: (
-                (f.get("width") or 99999) *
-                (f.get("height") or 99999)
+        if word not in useful:
+            useful.append(word)
+
+    queries = []
+
+    # Most relevant query first.
+    if useful:
+
+        queries.append(
+            clean_query(
+                " ".join(useful[:5])
             )
         )
 
-        selected = suitable[0]
-        url = selected.get("link")
+    if len(useful) >= 2:
 
-        filename = os.path.join(
-            OUTPUT_DIR,
-            f"clip_{downloaded + 1}.mp4"
+        queries.append(
+            clean_query(
+                " ".join(useful[:3])
+            )
         )
 
-        print("Downloading:", filename)
+    # USA-oriented fallbacks.
+    queries.extend([
+        "United States America",
+        "USA city",
+        "American people",
+        "United States business",
+        "American technology",
+        "New York USA",
+        "Washington DC USA",
+        "Los Angeles USA",
+        "Chicago USA",
+    ])
+
+    # Remove duplicates.
+    final_queries = []
+
+    for query in queries:
+
+        query = query.strip()
+
+        if not query:
+            continue
+
+        if query.lower() not in [
+            q.lower()
+            for q in final_queries
+        ]:
+
+            final_queries.append(
+                query
+            )
+
+    return final_queries
+
+
+def clear_old_clips():
+
+    os.makedirs(
+        OUTPUT_DIR,
+        exist_ok=True
+    )
+
+    removed = 0
+
+    for filename in os.listdir(
+        OUTPUT_DIR
+    ):
+
+        path = os.path.join(
+            OUTPUT_DIR,
+            filename
+        )
+
+        if not os.path.isfile(path):
+            continue
+
+        if filename.lower().endswith(
+            (
+                ".mp4",
+                ".mov",
+                ".mkv",
+                ".webm"
+            )
+        ):
+
+            try:
+
+                os.remove(path)
+
+                removed += 1
+
+            except Exception as error:
+
+                print(
+                    "Could not remove:",
+                    path,
+                    error
+                )
+
+    print(
+        f"Old clips removed: {removed}"
+    )
+
+
+def get_video_file(video):
+
+    files = video.get(
+        "video_files",
+        []
+    )
+
+    if not files:
+        return None
+
+    portrait = []
+    usable = []
+
+    for item in files:
+
+        link = item.get("link")
+
+        width = item.get(
+            "width"
+        ) or 0
+
+        height = item.get(
+            "height"
+        ) or 0
+
+        if not link:
+            continue
+
+        # Ignore extremely small files.
+        if width < 480 or height < 480:
+            continue
+
+        usable.append(item)
+
+        if height >= width:
+            portrait.append(item)
+
+    candidates = (
+        portrait
+        if portrait
+        else usable
+    )
+
+    if not candidates:
+        return None
+
+    # Prefer a good HD-ish file without
+    # downloading huge 4K files.
+    def score(item):
+
+        width = item.get(
+            "width"
+        ) or 0
+
+        height = item.get(
+            "height"
+        ) or 0
+
+        area = width * height
+
+        # Prefer 720p-1080p range.
+        if height >= 1080:
+            penalty = abs(
+                height - 1080
+            )
+        else:
+            penalty = abs(
+                height - 720
+            )
+
+        return (
+            penalty,
+            area
+        )
+
+    candidates.sort(
+        key=score
+    )
+
+    return candidates[0]
+
+
+def search_pexels(
+    session,
+    api_key,
+    query
+):
+
+    print("")
+    print("--------------------------------")
+    print(
+        f"Searching Pexels: {query}"
+    )
+    print("--------------------------------")
+
+    headers = {
+        "Authorization": api_key
+    }
+
+    params = {
+        "query": query,
+        "orientation": "portrait",
+        "size": "medium",
+        "per_page": 15,
+    }
+
+    try:
+
+        response = session.get(
+            PEXELS_API_URL,
+            headers=headers,
+            params=params,
+            timeout=REQUEST_TIMEOUT
+        )
+
+    except Exception as error:
+
+        print(
+            "Pexels request error:",
+            error
+        )
+
+        return []
+
+    if response.status_code != 200:
+
+        print(
+            "Pexels HTTP error:",
+            response.status_code
+        )
+
+        print(
+            response.text[:500]
+        )
+
+        return []
+
+    try:
+
+        data = response.json()
+
+    except Exception:
+
+        print(
+            "ERROR: Invalid Pexels response."
+        )
+
+        return []
+
+    videos = data.get(
+        "videos",
+        []
+    )
+
+    if not videos:
+
+        print(
+            "No videos found."
+        )
+
+        return []
+
+    random.shuffle(
+        videos
+    )
+
+    return videos
+
+
+def download_video(
+    session,
+    url,
+    filename
+):
+
+    temporary = (
+        filename
+        + ".part"
+    )
+
+    try:
+
+        print(
+            "Downloading:",
+            filename
+        )
+
+        response = session.get(
+            url,
+            stream=True,
+            timeout=DOWNLOAD_TIMEOUT
+        )
+
+        if response.status_code != 200:
+
+            print(
+                "Download failed:",
+                response.status_code
+            )
+
+            return False
+
+        with open(
+            temporary,
+            "wb"
+        ) as file:
+
+            for chunk in response.iter_content(
+                chunk_size=1024 * 1024
+            ):
+
+                if chunk:
+
+                    file.write(
+                        chunk
+                    )
+
+        if not os.path.isfile(
+            temporary
+        ):
+
+            return False
+
+        size = os.path.getsize(
+            temporary
+        )
+
+        # Reject broken/tiny files.
+        if size < 50_000:
+
+            print(
+                "Downloaded file is too small."
+            )
+
+            try:
+                os.remove(
+                    temporary
+                )
+            except Exception:
+                pass
+
+            return False
+
+        os.replace(
+            temporary,
+            filename
+        )
+
+        print(
+            "Download successful:",
+            f"{size:,} bytes"
+        )
+
+        return True
+
+    except Exception as error:
+
+        print(
+            "Download error:",
+            error
+        )
 
         try:
-            r = requests.get(
-                url,
-                stream=True,
-                timeout=60
+
+            if os.path.isfile(
+                temporary
+            ):
+
+                os.remove(
+                    temporary
+                )
+
+        except Exception:
+            pass
+
+        return False
+
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
+def main():
+
+    print("")
+    print("================================")
+    print("USA DOSE SMART CLIP DOWNLOADER")
+    print("================================")
+
+    api_key = os.getenv(
+        "PEXELS_API_KEY"
+    )
+
+    if not api_key:
+
+        print("")
+        print(
+            "ERROR: PEXELS_API_KEY is missing."
+        )
+        print("")
+        print(
+            "Add PEXELS_API_KEY in:"
+        )
+        print(
+            "GitHub → Settings → Secrets and variables"
+        )
+        print(
+            "→ Actions"
+        )
+        print("")
+
+        sys.exit(1)
+
+    script = read_script()
+
+    print("")
+    print("Daily script:")
+    print("--------------------------------")
+    print(script)
+    print("--------------------------------")
+
+    clear_old_clips()
+
+    queries = build_queries(
+        script
+    )
+
+    print("")
+    print("Search queries:")
+    print("--------------------------------")
+
+    for query in queries:
+
+        print(
+            "-",
+            query
+        )
+
+    print("--------------------------------")
+
+    session = requests.Session()
+
+    downloaded = 0
+
+    used_video_ids = set()
+
+    for query in queries:
+
+        if downloaded >= MAX_CLIPS:
+            break
+
+        videos = search_pexels(
+            session,
+            api_key,
+            query
+        )
+
+        for video in videos:
+
+            if downloaded >= MAX_CLIPS:
+                break
+
+            video_id = video.get(
+                "id"
             )
 
-            if r.status_code != 200:
-                print("Download failed:", r.status_code)
+            if video_id in used_video_ids:
                 continue
 
-            with open(filename, "wb") as f:
-                for chunk in r.iter_content(
-                    chunk_size=1024 * 1024
-                ):
-                    if chunk:
-                        f.write(chunk)
+            selected = get_video_file(
+                video
+            )
 
-            if os.path.getsize(filename) < 10000:
-                os.remove(filename)
+            if not selected:
                 continue
 
-            print("Downloaded successfully.")
-            downloaded += 1
+            url = selected.get(
+                "link"
+            )
 
-        except Exception as e:
-            print("Download error:", e)
+            if not url:
+                continue
 
-print()
-print("================================")
-print("DOWNLOAD COMPLETE")
-print("================================")
-print("Videos downloaded:", downloaded)
+            used_video_ids.add(
+                video_id
+            )
 
-if downloaded < 3:
-    print("ERROR: Less than 3 usable videos downloaded.")
-    sys.exit(1)
+            filename = os.path.join(
+                OUTPUT_DIR,
+                f"clip_{downloaded + 1}.mp4"
+            )
 
-for filename in sorted(os.listdir(OUTPUT_DIR)):
-    print(" -", filename)
+            success = download_video(
+                session,
+                url,
+                filename
+            )
 
-print("================================")
+            if success:
+
+                downloaded += 1
+
+                print(
+                    f"Usable clips: "
+                    f"{downloaded}/{MAX_CLIPS}"
+                )
+
+        # Small delay between searches.
+        time.sleep(1)
+
+    print("")
+    print("================================")
+    print("CLIP DOWNLOAD COMPLETE")
+    print("================================")
+    print(
+        f"Usable clips: {downloaded}"
+    )
+    print(
+        f"Required minimum: {MIN_CLIPS}"
+    )
+    print("================================")
+
+    if downloaded < MIN_CLIPS:
+
+        print("")
+        print(
+            "ERROR: Not enough usable clips."
+        )
+
+        print(
+            "Video generation will stop safely."
+        )
+
+        print("")
+        print(
+            "Possible causes:"
+        )
+        print(
+            "1. PEXELS_API_KEY is invalid."
+        )
+        print(
+            "2. Pexels returned no suitable videos."
+        )
+        print(
+            "3. Pexels API request was blocked."
+        )
+
+        sys.exit(1)
+
+    print("")
+    print(
+        "Clips ready for create_video.py:"
+    )
+
+    for filename in sorted(
+        os.listdir(OUTPUT_DIR)
+    ):
+
+        path = os.path.join(
+            OUTPUT_DIR,
+            filename
+        )
+
+        if os.path.isfile(path):
+
+            print(
+                " -",
+                path
+            )
+
+    print("")
+    print(
+        "Clip downloader: SUCCESS"
+    )
+    print(
+        "create_video.py can continue."
+    )
+
+
+if __name__ == "__main__":
+
+    main()
