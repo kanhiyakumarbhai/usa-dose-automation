@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -7,16 +8,18 @@ from google.oauth2.credentials import Credentials
 
 
 # ==========================================================
-# USA DOSE - YOUTUBE UPLOADER
+# USA DOSE - YOUTUBE AUTO PUBLISHER
 # ==========================================================
 
 VIDEO_FILE = "usa_dose_short.mp4"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
-# IMPORTANT:
-# Keep videos PRIVATE.
-PRIVACY_STATUS = "private"
+# ==========================================================
+# PUBLISH SETTING
+# ==========================================================
+# Video will be PUBLIC immediately after upload.
+PRIVACY_STATUS = "public"
 
 
 # ==========================================================
@@ -26,17 +29,56 @@ PRIVACY_STATUS = "private"
 def read_file(filename):
 
     if not os.path.isfile(filename):
-
         print(f"ERROR: {filename} not found.")
         sys.exit(1)
 
-    with open(
-        filename,
-        "r",
-        encoding="utf-8"
-    ) as f:
-
+    with open(filename, "r", encoding="utf-8") as f:
         return f.read().strip()
+
+
+# ==========================================================
+# CLEAN TITLE
+# ==========================================================
+
+def clean_title(title):
+
+    title = title.replace("\n", " ")
+    title = re.sub(r"\s+", " ", title)
+    title = title.strip()
+
+    if len(title) > 100:
+        title = title[:97] + "..."
+
+    return title
+
+
+# ==========================================================
+# CLEAN HASHTAGS
+# ==========================================================
+
+def clean_hashtags(text):
+
+    hashtags = re.findall(
+        r"#[A-Za-z0-9_]+",
+        text
+    )
+
+    unique = []
+    seen = set()
+
+    for tag in hashtags:
+
+        key = tag.lower()
+
+        if key not in seen:
+            seen.add(key)
+            unique.append(tag)
+
+    # Always include Shorts
+    if "#shorts" not in seen:
+        unique.append("#Shorts")
+
+    return unique
 
 
 # ==========================================================
@@ -46,7 +88,7 @@ def read_file(filename):
 def main():
 
     print("================================")
-    print("USA DOSE YOUTUBE UPLOADER")
+    print("USA DOSE YOUTUBE AUTO PUBLISHER")
     print("================================")
 
     # ------------------------------------------------------
@@ -55,106 +97,91 @@ def main():
 
     if not os.path.isfile(VIDEO_FILE):
 
-        print(
-            f"ERROR: {VIDEO_FILE} not found."
-        )
+        print(f"ERROR: {VIDEO_FILE} not found.")
+        sys.exit(1)
+
+    if os.path.getsize(VIDEO_FILE) == 0:
+
+        print(f"ERROR: {VIDEO_FILE} is empty.")
         sys.exit(1)
 
     # ------------------------------------------------------
-    # YOUTUBE CREDENTIALS
+    # CHECK CREDENTIALS
     # ------------------------------------------------------
 
-    client_id = os.getenv(
-        "YOUTUBE_CLIENT_ID"
-    )
-
-    client_secret = os.getenv(
-        "YOUTUBE_CLIENT_SECRET"
-    )
-
-    refresh_token = os.getenv(
-        "YOUTUBE_REFRESH_TOKEN"
-    )
+    client_id = os.getenv("YOUTUBE_CLIENT_ID")
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN")
 
     if not client_id:
-
-        print(
-            "ERROR: YOUTUBE_CLIENT_ID missing."
-        )
+        print("ERROR: YOUTUBE_CLIENT_ID missing.")
         sys.exit(1)
 
     if not client_secret:
-
-        print(
-            "ERROR: YOUTUBE_CLIENT_SECRET missing."
-        )
+        print("ERROR: YOUTUBE_CLIENT_SECRET missing.")
         sys.exit(1)
 
     if not refresh_token:
-
-        print(
-            "ERROR: YOUTUBE_REFRESH_TOKEN missing."
-        )
+        print("ERROR: YOUTUBE_REFRESH_TOKEN missing.")
         sys.exit(1)
 
     # ------------------------------------------------------
     # READ TITLE
     # ------------------------------------------------------
 
-    title = read_file(
-        TITLE_FILE
-    )
+    title = read_file(TITLE_FILE)
+    title = clean_title(title)
+
+    if not title:
+
+        print("ERROR: YouTube title is empty.")
+        sys.exit(1)
 
     # ------------------------------------------------------
     # READ HASHTAGS
     # ------------------------------------------------------
 
-    hashtags = read_file(
-        HASHTAGS_FILE
-    )
+    hashtags_raw = read_file(HASHTAGS_FILE)
+    hashtags = clean_hashtags(hashtags_raw)
 
-    if not title:
-
-        print(
-            "ERROR: YouTube title is empty."
-        )
-        sys.exit(1)
-
-    if not hashtags:
+    if len(hashtags) < 7:
 
         print(
-            "ERROR: YouTube hashtags are empty."
+            f"ERROR: Only {len(hashtags)} hashtags found."
         )
+        print("At least 7 hashtags are required.")
         sys.exit(1)
-
-    # ------------------------------------------------------
-    # CLEAN TITLE
-    # ------------------------------------------------------
-
-    title = title.replace(
-        "\n",
-        " "
-    ).strip()
-
-    if len(title) > 100:
-
-        title = title[:97] + "..."
 
     # ------------------------------------------------------
     # DESCRIPTION
     # ------------------------------------------------------
+
+    hashtag_text = " ".join(hashtags)
 
     description = (
         "🇺🇸 USA Dose\n\n"
         "Discover surprising facts, history, "
         "places, inventions and stories from "
         "the United States.\n\n"
-        f"{hashtags}\n\n"
-        "#Shorts"
+        f"{hashtag_text}"
     )
 
     # ------------------------------------------------------
-    # YOUTUBE CLIENT
+    # DISPLAY INFORMATION
+    # ------------------------------------------------------
+
+    print("")
+    print("================================")
+    print("VIDEO INFORMATION")
+    print("================================")
+    print(f"Title: {title}")
+    print(f"Hashtags: {hashtag_text}")
+    print(f"Hashtag count: {len(hashtags)}")
+    print(f"Privacy: {PRIVACY_STATUS}")
+    print("================================")
+
+    # ------------------------------------------------------
+    # YOUTUBE AUTHENTICATION
     # ------------------------------------------------------
 
     print("")
@@ -182,7 +209,9 @@ def main():
     except Exception as e:
 
         print("")
+        print("================================")
         print("YOUTUBE AUTHENTICATION ERROR")
+        print("================================")
         print(e)
         sys.exit(1)
 
@@ -192,14 +221,10 @@ def main():
 
     print("")
     print("================================")
-    print("UPLOADING SHORT")
+    print("UPLOADING AND PUBLISHING SHORT")
     print("================================")
     print("")
-    print(f"Title: {title}")
-    print("")
-    print(f"Hashtags: {hashtags}")
-    print("")
-    print(f"Privacy: {PRIVACY_STATUS}")
+    print("Privacy: PUBLIC")
     print("")
     print("Uploading...")
     print("")
@@ -207,28 +232,39 @@ def main():
     try:
 
         request = youtube.videos().insert(
+
             part="snippet,status",
+
             body={
+
                 "snippet": {
+
                     "title": title,
+
                     "description": description,
-                    "categoryId": "25",
+
+                    # People & Blogs
+                    "categoryId": "22",
+
                     "tags": [
-                        tag.replace(
-                            "#",
-                            ""
-                        )
-                        for tag in hashtags.split()
-                        if tag.startswith("#")
+                        tag.lstrip("#")
+                        for tag in hashtags
                     ],
                 },
+
                 "status": {
-                    "privacyStatus": PRIVACY_STATUS,
+
+                    # IMPORTANT:
+                    # Publish immediately
+                    "privacyStatus": "public",
+
                     "selfDeclaredMadeForKids": False,
                 },
             },
+
             media_body=MediaFileUpload(
                 VIDEO_FILE,
+                mimetype="video/mp4",
                 chunksize=-1,
                 resumable=True
             ),
@@ -246,31 +282,34 @@ def main():
         sys.exit(1)
 
     # ------------------------------------------------------
-    # RESULT
+    # VIDEO ID
     # ------------------------------------------------------
 
-    video_id = response.get(
-        "id"
-    )
+    video_id = response.get("id")
 
     if not video_id:
 
-        print(
-            "ERROR: YouTube did not return a video ID."
-        )
+        print("")
+        print("ERROR: YouTube did not return a video ID.")
         sys.exit(1)
+
+    # ------------------------------------------------------
+    # FINAL SUCCESS
+    # ------------------------------------------------------
 
     print("")
     print("================================")
-    print("UPLOAD SUCCESS")
+    print("YOUTUBE PUBLISH SUCCESS")
     print("================================")
     print("")
     print(f"Video ID: {video_id}")
     print(f"Title: {title}")
-    print(f"Privacy: {PRIVACY_STATUS}")
+    print("Privacy: PUBLIC")
+    print("")
+    print("Video has been uploaded and published.")
     print("")
     print(
-        "Video uploaded as PRIVATE."
+        f"https://www.youtube.com/watch?v={video_id}"
     )
     print("")
     print("================================")
