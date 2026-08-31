@@ -22,7 +22,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-
       # ==================================================
       # PYTHON
       # ==================================================
@@ -31,8 +30,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-
 
       # ==================================================
       # SYSTEM DEPENDENCIES
@@ -50,7 +47,6 @@ jobs:
           ffmpeg -version
           ffprobe -version
 
-
       # ==================================================
       # PYTHON DEPENDENCIES
       # ==================================================
@@ -63,13 +59,14 @@ jobs:
 
           python -m pip install --upgrade pip
 
-          if [ -f requirements.txt ]; then
-            python -m pip install -r requirements.txt
-          else
-            echo "requirements.txt not found."
+          if [ ! -f requirements.txt ]; then
+            echo "ERROR: requirements.txt not found!"
+            echo "Repository files:"
+            find . -maxdepth 2 -type f | sort
             exit 1
           fi
 
+          python -m pip install -r requirements.txt
 
       # ==================================================
       # PACKAGE CHECK
@@ -84,12 +81,54 @@ jobs:
           python -c "from google import genai; print('google-genai: OK')"
           python -c "from elevenlabs.client import ElevenLabs; print('elevenlabs: OK')"
           python -c "import requests; print('requests: OK')"
-          python -c "import PIL; print('Pillow: OK')"
+          python -c "import moviepy; print('moviepy: OK')"
 
+          echo "Python:"
+          python --version
+
+          echo "FFmpeg:"
+          ffmpeg -version | head -1
+
+          echo "FFprobe:"
+          ffprobe -version | head -1
+
+      # ==================================================
+      # CHECK REQUIRED FILES
+      # ==================================================
+
+      - name: Check automation files
+        run: |
           echo "================================"
-          echo "ALL REQUIRED PACKAGES OK"
+          echo "CHECKING AUTOMATION FILES"
           echo "================================"
 
+          REQUIRED_FILES="
+          scripts/generate_script.py
+          scripts/generate_voice.py
+          download_clips.py
+          create_video.py
+          upload_video.py
+          "
+
+          FAILED=0
+
+          for file in $REQUIRED_FILES; do
+            if [ -f "$file" ]; then
+              echo "OK: $file"
+            else
+              echo "MISSING: $file"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo ""
+            echo "ERROR: Required automation file is missing."
+            echo ""
+            echo "Repository structure:"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
 
       # ==================================================
       # GENERATE DAILY SCRIPT
@@ -106,7 +145,6 @@ jobs:
 
           python scripts/generate_script.py
 
-
       # ==================================================
       # CHECK SCRIPT
       # ==================================================
@@ -114,7 +152,7 @@ jobs:
       - name: Check generated script
         run: |
           echo "================================"
-          echo "CHECKING GENERATED CONTENT"
+          echo "CHECKING GENERATED SCRIPT"
           echo "================================"
 
           if [ ! -f daily_script.txt ]; then
@@ -127,14 +165,10 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "SCRIPT:"
           cat daily_script.txt
-
           echo ""
-          echo "================================"
-          echo "SCRIPT CHECK PASSED"
-          echo "================================"
-
 
       # ==================================================
       # GENERATE FEMALE VOICE
@@ -161,10 +195,7 @@ jobs:
             exit 1
           fi
 
-          echo "================================"
-          echo "VOICE CREATED SUCCESSFULLY"
-          echo "================================"
-
+          echo "Voice generated successfully."
 
       # ==================================================
       # DOWNLOAD VIDEO CLIPS
@@ -182,9 +213,8 @@ jobs:
 
           python download_clips.py
 
-
       # ==================================================
-      # CHECK VIDEO CLIPS
+      # CHECK CLIPS
       # ==================================================
 
       - name: Check video clips
@@ -198,21 +228,22 @@ jobs:
           COUNT=$(find clips -type f \
             \( -iname "*.mp4" \
             -o -iname "*.mov" \
-            -o -iname "*.webm" \
-            -o -iname "*.mkv" \) | wc -l)
+            -o -iname "*.webm" \) \
+            | wc -l)
 
           echo "Video clips found: $COUNT"
 
           if [ "$COUNT" -eq 0 ]; then
+            echo ""
             echo "ERROR: No video clips found."
-            echo "Video creation cannot continue."
+            echo ""
+            echo "Possible causes:"
+            echo "1. PEXELS_API_KEY missing"
+            echo "2. Pexels API request failed"
+            echo "3. download_clips.py did not save clips"
+            echo ""
             exit 1
           fi
-
-          echo "================================"
-          echo "VIDEO CLIPS CHECK PASSED"
-          echo "================================"
-
 
       # ==================================================
       # CREATE VIDEO
@@ -238,31 +269,7 @@ jobs:
             exit 1
           fi
 
-          echo "================================"
-          echo "VIDEO CREATED SUCCESSFULLY"
-          echo "================================"
-
-
-      # ==================================================
-      # CHECK VIDEO
-      # ==================================================
-
-      - name: Check final video
-        run: |
-          echo "================================"
-          echo "CHECKING FINAL VIDEO"
-          echo "================================"
-
-          ffprobe \
-            -v error \
-            -show_entries format=duration \
-            -of default=noprint_wrappers=1 \
-            usa_dose_short.mp4
-
-          echo "================================"
-          echo "FINAL VIDEO CHECK PASSED"
-          echo "================================"
-
+          echo "Video created successfully."
 
       # ==================================================
       # UPLOAD TO YOUTUBE
@@ -281,7 +288,6 @@ jobs:
 
           python upload_video.py
 
-
       # ==================================================
       # SAVE GENERATED FILES
       # ==================================================
@@ -296,59 +302,30 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # ----------------------------------------------
-          # Add files only when they exist
-          # ----------------------------------------------
-
           for file in \
             daily_script.txt \
             video_title.txt \
-            video_hashtags.txt
+            video_hashtags.txt \
+            voice.mp3 \
+            usa_dose_short.mp4
           do
+
             if [ -f "$file" ]; then
               echo "Adding: $file"
               git add "$file"
             else
               echo "Not found: $file"
             fi
+
           done
 
-          # ----------------------------------------------
-          # Commit only if something changed
-          # ----------------------------------------------
-
           if git diff --cached --quiet; then
-            echo "No generated content changes to commit."
+            echo "No files to commit."
           else
             git commit -m "Generate daily USA Dose content"
-
-            git push || echo "Git push failed or nothing new to push."
+            git push || true
           fi
 
           echo "================================"
           echo "SAVE STEP FINISHED"
-          echo "================================"
-
-
-      # ==================================================
-      # FINAL STATUS
-      # ==================================================
-
-      - name: Workflow summary
-        if: always()
-        run: |
-          echo "================================"
-          echo "USA DOSE AUTOMATION FINISHED"
-          echo "================================"
-
-          echo ""
-          echo "Generated files:"
-
-          [ -f daily_script.txt ] && echo "OK: daily_script.txt" || echo "MISSING: daily_script.txt"
-          [ -f video_title.txt ] && echo "OK: video_title.txt" || echo "MISSING: video_title.txt"
-          [ -f video_hashtags.txt ] && echo "OK: video_hashtags.txt" || echo "MISSING: video_hashtags.txt"
-          [ -f voice.mp3 ] && echo "OK: voice.mp3" || echo "MISSING: voice.mp3"
-          [ -f usa_dose_short.mp4 ] && echo "OK: usa_dose_short.mp4" || echo "MISSING: usa_dose_short.mp4"
-
-          echo ""
           echo "================================"
