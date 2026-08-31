@@ -4,461 +4,141 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Every day at 9:00 PM IST
     - cron: "30 15 * * *"
 
 permissions:
   contents: write
 
 jobs:
-  usa-dose:
-    name: Create USA Dose Video
+  daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
 
-      # =====================================================
-      # 1. CHECKOUT
-      # =====================================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # =====================================================
-      # 2. PYTHON
-      # =====================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      # =====================================================
-      # 3. INSTALL FFMPEG
-      # =====================================================
-
-      - name: Install FFmpeg
+      - name: Install system dependencies
         run: |
-          echo "================================"
-          echo "INSTALLING FFMPEG"
-          echo "================================"
-
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-          echo ""
-          echo "FFmpeg:"
-          ffmpeg -version | head -n 1
-
-          echo ""
-          echo "FFprobe:"
-          ffprobe -version | head -n 1
-
-      # =====================================================
-      # 4. INSTALL PYTHON PACKAGES
-      # =====================================================
-
       - name: Install Python dependencies
         run: |
-          echo "================================"
-          echo "INSTALLING PYTHON DEPENDENCIES"
-          echo "================================"
-
           python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-          pip install --upgrade \
-            google-genai \
-            edge-tts \
-            requests \
-            moviepy \
-            imageio \
-            imageio-ffmpeg \
-            pillow
-
-          echo ""
-          echo "================================"
-          echo "CHECKING PACKAGES"
-          echo "================================"
-
-          python -c "from google import genai; print('google-genai OK')"
-          python -c "import requests; print('requests OK')"
-          python -c "import edge_tts; print('edge-tts OK')"
-          python -c "import moviepy; print('moviepy OK')"
-
-      # =====================================================
-      # 5. CHECK REPOSITORY
-      # =====================================================
-
-      - name: Check repository files
+      - name: Check Python packages
         run: |
-          echo "================================"
-          echo "CHECKING REPOSITORY"
-          echo "================================"
-
-          echo ""
-          echo "ROOT FILES:"
-          ls -la
-
-          echo ""
-          echo "SCRIPTS:"
-          find scripts -maxdepth 2 -type f -print 2>/dev/null || true
-
-          echo ""
-          echo "Checking required files..."
-
-          if [ ! -f "scripts/generate_script.py" ]; then
-            echo "ERROR: scripts/generate_script.py not found."
-            exit 1
-          fi
-
-          if [ ! -f "create_video.py" ]; then
-            echo "ERROR: create_video.py not found."
-            exit 1
-          fi
-
-          if [ ! -f "upload_video.py" ]; then
-            echo "ERROR: upload_video.py not found."
-            exit 1
-          fi
-
-          if [ -f "download_clips.py" ]; then
-            echo "download_clips.py found in ROOT."
-          elif [ -f "scripts/download_clips.py" ]; then
-            echo "download_clips.py found in scripts/."
-          else
-            echo "ERROR: download_clips.py not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "REPOSITORY CHECK: PASSED"
-
-      # =====================================================
-      # 6. GENERATE DAILY SCRIPT
-      # =====================================================
+          python -c "from google import genai; print('google-genai: OK')"
+          python -c "from elevenlabs.client import ElevenLabs; print('elevenlabs: OK')"
+          python -c "import requests; print('requests: OK')"
+          ffmpeg -version
+          ffprobe -version
 
       - name: Generate daily script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           echo "================================"
           echo "GENERATING DAILY SCRIPT"
           echo "================================"
 
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "ERROR: GEMINI_API_KEY secret is missing."
-            exit 1
-          fi
+          python scripts/generate_script.py
 
-          echo "Gemini API key: AVAILABLE"
+      - name: Check generated script
+        run: |
+          test -f daily_script.txt
+          test -s daily_script.txt
 
-          SUCCESS=0
-
-          for attempt in 1 2 3 4 5
-          do
-            echo ""
-            echo "================================"
-            echo "GEMINI ATTEMPT $attempt / 5"
-            echo "================================"
-
-            if python scripts/generate_script.py; then
-              SUCCESS=1
-              echo ""
-              echo "SCRIPT GENERATION: PASSED"
-              break
-            fi
-
-            echo ""
-            echo "Gemini request failed."
-
-            if [ "$attempt" -lt 5 ]; then
-              echo "Waiting 15 seconds..."
-              sleep 15
-            fi
-          done
-
-          if [ "$SUCCESS" -ne 1 ]; then
-            echo ""
-            echo "ERROR: Gemini failed after 5 attempts."
-            exit 1
-          fi
-
-          echo ""
           echo "================================"
-          echo "GENERATED CONTENT"
+          echo "SCRIPT CREATED"
           echo "================================"
 
-          if [ ! -f "daily_script.txt" ]; then
-            echo "ERROR: daily_script.txt missing."
-            exit 1
-          fi
-
-          if [ ! -f "video_title.txt" ]; then
-            echo "ERROR: video_title.txt missing."
-            exit 1
-          fi
-
-          if [ ! -f "video_hashtags.txt" ]; then
-            echo "ERROR: video_hashtags.txt missing."
-            exit 1
-          fi
-
-          echo ""
-          echo "TITLE:"
-          cat video_title.txt
-
-          echo ""
-          echo "HASHTAGS:"
-          cat video_hashtags.txt
-
-          echo ""
-          echo "SCRIPT:"
           cat daily_script.txt
-
-      # =====================================================
-      # 7. GENERATE FEMALE VOICE
-      # =====================================================
 
       - name: Generate female voice
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVENLABS_API_KEY_1: ${{ secrets.ELEVENLABS_API_KEY_1 }}
-          ELEVENLABS_API_KEY_2: ${{ secrets.ELEVENLABS_API_KEY_2 }}
-          ELEVENLABS_API_KEY_3: ${{ secrets.ELEVENLABS_API_KEY_3 }}
+          ELEVEN_LABS_API_KEY: ${{ secrets.ELEVEN_LABS_API_KEY }}
         run: |
           echo "================================"
           echo "GENERATING FEMALE VOICE"
           echo "================================"
 
-          if [ -f "scripts/generate_voice.py" ]; then
-            echo "Voice script: scripts/generate_voice.py"
-            python scripts/generate_voice.py
+          python scripts/generate_voice.py
 
-          elif [ -f "generate_voice.py" ]; then
-            echo "Voice script: generate_voice.py"
-            python generate_voice.py
+          test -f voice.mp3
+          test -s voice.mp3
 
-          else
-            echo "ERROR: generate_voice.py not found."
-            exit 1
-          fi
-
-          echo ""
-          echo "================================"
-          echo "VOICE CHECK"
-          echo "================================"
-
-          if [ ! -f "voice.mp3" ]; then
-            echo "ERROR: voice.mp3 was not created."
-            exit 1
-          fi
-
-          if [ ! -s "voice.mp3" ]; then
-            echo "ERROR: voice.mp3 is empty."
-            exit 1
-          fi
-
-          ls -lh voice.mp3
-
-          echo ""
-          echo "VOICE GENERATION: PASSED"
-
-      # =====================================================
-      # 8. DOWNLOAD VIDEO CLIPS
-      # =====================================================
-
-      - name: Download relevant clips
+      - name: Download video clips
         env:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           echo "================================"
-          echo "DOWNLOADING RELEVANT CLIPS"
+          echo "DOWNLOADING VIDEO CLIPS"
           echo "================================"
 
-          if [ -f "download_clips.py" ]; then
-            echo "Using ROOT download_clips.py"
-            python download_clips.py
+          python download_clips.py
 
-          elif [ -f "scripts/download_clips.py" ]; then
-            echo "Using scripts/download_clips.py"
-            python scripts/download_clips.py
-
-          else
-            echo "ERROR: download_clips.py not found."
-            exit 1
-          fi
-
-          echo ""
+      - name: Check video clips
+        run: |
           echo "================================"
           echo "CHECKING VIDEO CLIPS"
           echo "================================"
 
-          find . -type f \
-            \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" \) \
-            -not -path "./.git/*" \
-            -print
+          mkdir -p clips
 
-          CLIP_COUNT=$(find . -type f \
-            \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" \) \
-            -not -path "./.git/*" \
-            | wc -l)
+          COUNT=$(find clips -type f \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" \) | wc -l)
 
-          echo ""
-          echo "Video files found: $CLIP_COUNT"
+          echo "Video clips found: $COUNT"
 
-          if [ "$CLIP_COUNT" -eq 0 ]; then
+          if [ "$COUNT" -eq 0 ]; then
             echo "ERROR: No video clips found."
             exit 1
           fi
 
-          echo ""
-          echo "CLIP DOWNLOAD: PASSED"
-
-      # =====================================================
-      # 9. CREATE VIDEO
-      # =====================================================
-
-      - name: Create USA Dose HD video
+      - name: Create USA Dose video
         run: |
           echo "================================"
           echo "CREATING USA DOSE HD VIDEO"
           echo "================================"
 
-          if [ ! -f "voice.mp3" ]; then
-            echo "ERROR: voice.mp3 missing."
-            exit 1
-          fi
-
-          if [ ! -f "daily_script.txt" ]; then
-            echo "ERROR: daily_script.txt missing."
-            exit 1
-          fi
-
-          echo ""
-          echo "FFmpeg:"
-          ffmpeg -version | head -n 1
-
-          echo ""
-          echo "FFprobe:"
-          ffprobe -version | head -n 1
-
-          echo ""
-          echo "Running create_video.py..."
+          ffprobe -version
 
           python create_video.py
 
-          echo ""
-          echo "================================"
-          echo "CHECKING FINAL VIDEO"
-          echo "================================"
-
-          if [ -f "usa_dose_short.mp4" ]; then
-            echo "Found usa_dose_short.mp4"
-            ls -lh usa_dose_short.mp4
-
-          elif [ -f "usa_dose_hd.mp4" ]; then
-            echo "Found usa_dose_hd.mp4"
-            ls -lh usa_dose_hd.mp4
-
-          else
-            echo "ERROR: Final video was not created."
-
-            echo ""
-            echo "MP4 files:"
-            find . -type f -iname "*.mp4" -print
-
-            exit 1
-          fi
-
-          echo ""
-          echo "VIDEO CREATION: PASSED"
-
-      # =====================================================
-      # 10. YOUTUBE UPLOAD
-      # =====================================================
+          test -f usa_dose_short.mp4
+          test -s usa_dose_short.mp4
 
       - name: Upload video to YouTube
+        if: success()
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
           echo "================================"
-          echo "UPLOADING VIDEO TO YOUTUBE"
+          echo "UPLOADING TO YOUTUBE"
           echo "================================"
-
-          if [ ! -f "upload_video.py" ]; then
-            echo "ERROR: upload_video.py missing."
-            exit 1
-          fi
-
-          if [ -f "usa_dose_short.mp4" ]; then
-            export VIDEO_FILE="usa_dose_short.mp4"
-
-          elif [ -f "usa_dose_hd.mp4" ]; then
-            export VIDEO_FILE="usa_dose_hd.mp4"
-
-          else
-            echo "ERROR: Video file not found."
-            exit 1
-          fi
-
-          echo "Video file: $VIDEO_FILE"
 
           python upload_video.py
 
-          echo ""
-          echo "================================"
-          echo "YOUTUBE UPLOAD: PASSED"
-          echo "================================"
-
-      # =====================================================
-      # 11. SAVE OUTPUTS
-      # =====================================================
-
-      - name: Commit generated content
-        if: success()
-        run: |
-          echo "================================"
-          echo "SAVING GENERATED FILES"
-          echo "================================"
-
-          git config user.name "USA Dose Automation"
-          git config user.email "actions@github.com"
-
-          git add \
-            daily_script.txt \
-            video_title.txt \
-            video_hashtags.txt \
-            voice.mp3 \
-            usa_dose_short.mp4 \
-            usa_dose_hd.mp4 \
-            2>/dev/null || true
-
-          if git diff --cached --quiet; then
-            echo "Nothing new to commit."
-          else
-            git commit -m "Generate daily USA Dose video"
-            git push
-          fi
-
-      # =====================================================
-      # 12. ARTIFACTS
-      # =====================================================
-
-      - name: Upload generated files
+      - name: Save generated files
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: usa-dose-output
-          retention-days: 7
-          if-no-files-found: warn
-          path: |
-            daily_script.txt
-            video_title.txt
-            video_hashtags.txt
-            voice.mp3
-            usa_dose_short.mp4
-            usa_dose_hd.mp4
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add daily_script.txt video_title.txt video_hashtags.txt
+
+          git diff --cached --quiet || git commit -m "Generate daily USA Dose content"
+
+          git push || true
