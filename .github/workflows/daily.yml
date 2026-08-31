@@ -1,94 +1,94 @@
+```yaml
 name: USA Dose Daily Automation
 
 on:
   workflow_dispatch:
   schedule:
-    # रोज़ UTC 13:00 = India 18:30
-    # इसे बाद में USA audience के हिसाब से बदल सकते हैं
-    - cron: "0 13 * * *"
+    - cron: "30 4 * * *"
 
 permissions:
   contents: write
 
 jobs:
-
-  build-video:
-
+  generate-video:
     runs-on: ubuntu-latest
 
     steps:
 
-      # ====================================================
+      # =====================================================
       # CHECKOUT
-      # ====================================================
+      # =====================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-
-      # ====================================================
+      # =====================================================
       # PYTHON
-      # ====================================================
+      # =====================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
+      # =====================================================
+      # INSTALL DEPENDENCIES
+      # =====================================================
 
-      # ====================================================
-      # SYSTEM PACKAGES
-      # ====================================================
-
-      - name: Install system packages
+      - name: Install dependencies
         run: |
-
-          sudo apt-get update
-
-          sudo apt-get install -y \
-            ffmpeg \
-            fonts-dejavu
-
-
-      # ====================================================
-      # PYTHON PACKAGES
-      # ====================================================
-
-      - name: Install Python packages
-        run: |
-
           python -m pip install --upgrade pip
 
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install google-genai
           pip install elevenlabs
           pip install edge-tts
           pip install requests
-          pip install google-genai
+          pip install moviepy
+          pip install imageio
+          pip install imageio-ffmpeg
 
-          pip install google-api-python-client
-          pip install google-auth
-          pip install google-auth-oauthlib
-          pip install google-auth-httplib2
+      # =====================================================
+      # CHECK FILES
+      # =====================================================
 
-
-      # ====================================================
-      # FOLDER SETUP
-      # ====================================================
-
-      - name: Create folders
+      - name: Check project files
         run: |
+          echo "================================"
+          echo "PROJECT FILE CHECK"
+          echo "================================"
 
-          mkdir -p scripts
-          mkdir -p output
-          mkdir -p clips
+          echo "Current directory:"
+          pwd
 
+          echo ""
+          echo "Root files:"
+          ls -la
 
-      # ====================================================
-      # GENERATE ORIGINAL SCRIPT
-      # ====================================================
+          echo ""
+          echo "Scripts directory:"
+          if [ -d scripts ]; then
+            ls -la scripts
+          else
+            echo "scripts directory does not exist"
+          fi
+
+          echo ""
+          echo "================================"
+
+      # =====================================================
+      # GENERATE DAILY SCRIPT
+      # =====================================================
 
       - name: Generate daily script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
 
           echo "================================"
@@ -97,230 +97,217 @@ jobs:
 
           python scripts/generate_script.py
 
+      # =====================================================
+      # VERIFY SCRIPT
+      # =====================================================
 
-      # ====================================================
-      # CHECK SCRIPT FILE
-      # ====================================================
-
-      - name: Check generated script
+      - name: Verify generated content
         run: |
 
           echo "================================"
-          echo "SCRIPT FILE CHECK"
+          echo "VERIFYING GENERATED CONTENT"
           echo "================================"
 
-          if [ ! -f daily_script.txt ]; then
-
-            echo "ERROR: daily_script.txt not found."
-
-            exit 1
-
-          fi
+          test -s daily_script.txt
+          test -s video_title.txt
+          test -s video_hashtags.txt
 
           echo ""
-          echo "Generated script:"
-          echo "--------------------------------"
-
+          echo "SCRIPT:"
           cat daily_script.txt
 
           echo ""
-          echo "--------------------------------"
+          echo "TITLE:"
+          cat video_title.txt
 
+          echo ""
+          echo "HASHTAGS:"
+          cat video_hashtags.txt
 
-      # ====================================================
-      # GENERATE VOICE
-      # ====================================================
+          echo ""
+          echo "CONTENT CHECK PASSED"
+
+      # =====================================================
+      # GENERATE FEMALE VOICE
+      # =====================================================
 
       - name: Generate female voice
         env:
-
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-
           ELEVENLABS_API_KEY_1: ${{ secrets.ELEVENLABS_API_KEY_1 }}
-
           ELEVENLABS_API_KEY_2: ${{ secrets.ELEVENLABS_API_KEY_2 }}
-
           ELEVENLABS_API_KEY_3: ${{ secrets.ELEVENLABS_API_KEY_3 }}
-
-          ELEVENLABS_API_KEY_4: ${{ secrets.ELEVENLABS_API_KEY_4 }}
-
-          ELEVENLABS_API_KEY_5: ${{ secrets.ELEVENLABS_API_KEY_5 }}
-
         run: |
 
           echo "================================"
           echo "GENERATING FEMALE VOICE"
           echo "================================"
 
-          python create_video.py
+          python scripts/generate_voice.py
 
-
-      # ====================================================
+      # =====================================================
       # VERIFY VOICE
-      # ====================================================
+      # =====================================================
 
       - name: Verify voice
         run: |
 
           echo "================================"
-          echo "VOICE FILE CHECK"
+          echo "VERIFYING VOICE"
           echo "================================"
 
-          if [ ! -f voice.mp3 ]; then
-
+          if [ ! -s voice.mp3 ]; then
             echo "ERROR: voice.mp3 was not created."
-
-            echo "Video generation will NOT continue."
-
             exit 1
-
           fi
 
-          SIZE=$(stat -c%s voice.mp3)
+          ls -lh voice.mp3
 
-          echo "Voice file size: ${SIZE} bytes"
+          echo "VOICE CHECK PASSED"
 
-          if [ "$SIZE" -le 0 ]; then
-
-            echo "ERROR: voice.mp3 is empty."
-
-            exit 1
-
-          fi
-
-          echo "Voice check: PASSED"
-
-
-      # ====================================================
+      # =====================================================
       # DOWNLOAD RELEVANT CLIPS
-      # ====================================================
+      # =====================================================
 
       - name: Download relevant clips
         env:
-
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-
         run: |
 
           echo "================================"
           echo "DOWNLOADING RELEVANT CLIPS"
           echo "================================"
 
+          # download_clips.py is in ROOT, not scripts/
           python download_clips.py
 
+      # =====================================================
+      # VERIFY CLIPS
+      # =====================================================
 
-      # ====================================================
-      # CREATE HD SHORT
-      # ====================================================
-
-      - name: Create HD 1080x1920 video
+      - name: Verify downloaded clips
         run: |
 
           echo "================================"
-          echo "CREATING HD VIDEO"
+          echo "VERIFYING VIDEO CLIPS"
           echo "================================"
 
-          python scripts/create_video.py
+          echo "Searching for video files..."
 
+          find . -type f \( \
+            -iname "*.mp4" -o \
+            -iname "*.mov" -o \
+            -iname "*.mkv" \
+          \) -not -path "./.git/*" -print
 
-      # ====================================================
+          CLIP_COUNT=$(find . -type f \( \
+            -iname "*.mp4" -o \
+            -iname "*.mov" -o \
+            -iname "*.mkv" \
+          \) -not -path "./.git/*" | wc -l)
+
+          echo ""
+          echo "Video files found: $CLIP_COUNT"
+
+          if [ "$CLIP_COUNT" -eq 0 ]; then
+            echo ""
+            echo "ERROR: No video clips were downloaded."
+            echo "Video generation stopped safely."
+            exit 1
+          fi
+
+          echo ""
+          echo "CLIP CHECK PASSED"
+
+      # =====================================================
+      # CREATE HD VIDEO
+      # =====================================================
+
+      - name: Create HD video
+        run: |
+
+          echo "================================"
+          echo "CREATING USA DOSE HD VIDEO"
+          echo "================================"
+
+          python create_video.py
+
+      # =====================================================
       # VERIFY VIDEO
-      # ====================================================
+      # =====================================================
 
-      - name: Verify video
+      - name: Verify final video
         run: |
 
           echo "================================"
-          echo "VIDEO CHECK"
+          echo "VERIFYING FINAL VIDEO"
           echo "================================"
 
-          if [ ! -f output/final.mp4 ]; then
-
-            echo "ERROR: output/final.mp4 not found."
-
+          if [ ! -s usa_dose_short.mp4 ]; then
+            echo "ERROR: usa_dose_short.mp4 was not created."
             exit 1
-
           fi
 
-          SIZE=$(stat -c%s output/final.mp4)
+          ls -lh usa_dose_short.mp4
 
-          echo "Video size: ${SIZE} bytes"
+          echo ""
+          echo "VIDEO CHECK PASSED"
 
-          if [ "$SIZE" -le 0 ]; then
+      # =====================================================
+      # UPLOAD TO YOUTUBE AS PRIVATE
+      # =====================================================
 
-            echo "ERROR: Video file is empty."
-
-            exit 1
-
-          fi
-
-          echo "Video check: PASSED"
-
-
-      # ====================================================
-      # YOUTUBE UPLOAD - PRIVATE
-      # ====================================================
-
-      - name: Upload to YouTube as Private
+      - name: Upload video to YouTube
         env:
-
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-
         run: |
 
           echo "================================"
           echo "UPLOADING TO YOUTUBE"
           echo "================================"
 
-          python scripts/upload_video.py
+          python upload_video.py
 
+      # =====================================================
+      # SAVE GENERATED CONTENT
+      # =====================================================
 
-      # ====================================================
-      # SAVE GENERATED FILES
-      # ====================================================
+      - name: Commit generated content
+        run: |
 
-      - name: Upload workflow artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
+          git config user.name "USA Dose Automation"
+          git config user.email "actions@users.noreply.github.com"
 
-          name: usa-dose-daily-output
+          git add \
+            daily_script.txt \
+            video_title.txt \
+            video_hashtags.txt
 
-          path: |
+          git diff --cached --quiet || \
+            git commit -m "Generate daily USA Dose content"
 
-            daily_script.txt
-            voice.mp3
-            output/final.mp4
+          git push || true
 
-          if-no-files-found: ignore
-
-
-      # ====================================================
-      # FINISHED
-      # ====================================================
+      # =====================================================
+      # FINAL
+      # =====================================================
 
       - name: Automation complete
         run: |
 
-          echo ""
           echo "================================"
           echo "USA DOSE AUTOMATION COMPLETE"
           echo "================================"
 
-          echo "Original script: YES"
-          echo "Female voice: YES"
-          echo "HD video: YES"
-          echo "Video format: 1080x1920"
-          echo "YouTube visibility: PRIVATE"
-          echo ""
-          echo "Every video should use:"
-          echo "- Different topic"
-          echo "- Different script"
-          echo "- Different title"
-          echo "- 5-7 relevant hashtags"
-          echo "- Relevant clips"
+          echo "Script: READY"
+          echo "Female voice: READY"
+          echo "Video clips: READY"
+          echo "HD video: READY"
+          echo "Title: READY"
+          echo "Hashtags: READY"
+          echo "YouTube upload: PRIVATE"
+
           echo "================================"
+```
