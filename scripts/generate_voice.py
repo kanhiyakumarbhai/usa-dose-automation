@@ -1,14 +1,10 @@
 import os
 import sys
 import re
+import asyncio
 
 from elevenlabs.client import ElevenLabs
 
-
-# ==========================================================
-# USA DOSE - LAURA FEMALE VOICE
-# MULTI API KEY FAILOVER
-# ==========================================================
 
 VOICE_NAME = "Laura"
 VOICE_ID = "FGY2WhTYpPnrIDTdsKH5"
@@ -21,10 +17,9 @@ MIN_WORDS = 40
 MAX_WORDS = 55
 MAX_CHARACTERS = 350
 
+# Free fallback female US voice
+EDGE_VOICE = "en-US-JennyNeural"
 
-# ==========================================================
-# GET ELEVENLABS KEYS
-# ==========================================================
 
 def get_api_keys():
 
@@ -39,13 +34,10 @@ def get_api_keys():
         if key and key.strip():
 
             keys.append(
-                (
-                    number,
-                    key.strip()
-                )
+                (number, key.strip())
             )
 
-    # Old secret support
+    # Old secret name support
     if not keys:
 
         old_key = os.getenv(
@@ -55,18 +47,11 @@ def get_api_keys():
         if old_key and old_key.strip():
 
             keys.append(
-                (
-                    1,
-                    old_key.strip()
-                )
+                (1, old_key.strip())
             )
 
     return keys
 
-
-# ==========================================================
-# CLEAN SCRIPT
-# ==========================================================
 
 def clean_script(text):
 
@@ -103,41 +88,259 @@ def clean_script(text):
     return text.strip()
 
 
-# ==========================================================
-# MAIN
-# ==========================================================
-
-def main():
-
-    print("================================")
-    print("USA DOSE FEMALE VOICE")
-    print("================================")
-    print(f"Voice: {VOICE_NAME}")
-    print(f"Voice ID: {VOICE_ID}")
-    print(f"Model: {MODEL_ID}")
-    print("================================")
-
-    # ------------------------------------------------------
-    # API KEYS
-    # ------------------------------------------------------
-
-    api_keys = get_api_keys()
-
-    print(
-        f"API keys available: {len(api_keys)}"
-    )
+def try_elevenlabs(api_keys, text):
 
     if not api_keys:
 
         print("")
+        print("No ElevenLabs API keys available.")
+        return False
+
+    for key_number, api_key in api_keys:
+
+        print("")
+        print("================================")
         print(
-            "ERROR: No ElevenLabs API keys found."
+            f"TRYING ELEVENLABS API KEY {key_number}"
+        )
+        print("================================")
+
+        try:
+
+            client = ElevenLabs(
+                api_key=api_key
+            )
+
+            print("")
+            print(
+                "Generating Laura female voice..."
+            )
+
+            audio = client.text_to_speech.convert(
+                voice_id=VOICE_ID,
+                model_id=MODEL_ID,
+                text=text,
+                output_format="mp3_44100_128",
+            )
+
+            with open(
+                OUTPUT_FILE,
+                "wb"
+            ) as file:
+
+                for chunk in audio:
+
+                    if chunk:
+                        file.write(chunk)
+
+            if not os.path.isfile(
+                OUTPUT_FILE
+            ):
+
+                raise RuntimeError(
+                    "voice.mp3 was not created."
+                )
+
+            size = os.path.getsize(
+                OUTPUT_FILE
+            )
+
+            if size <= 0:
+
+                raise RuntimeError(
+                    "voice.mp3 is empty."
+                )
+
+            print("")
+            print("================================")
+            print("ELEVENLABS VOICE SUCCESS")
+            print("================================")
+            print(
+                f"Voice: {VOICE_NAME}"
+            )
+            print(
+                f"API Key: {key_number}"
+            )
+            print(
+                f"Output: {OUTPUT_FILE}"
+            )
+            print(
+                f"File size: {size} bytes"
+            )
+            print("================================")
+
+            return True
+
+        except Exception as error:
+
+            error_text = str(
+                error
+            ).lower()
+
+            print("")
+            print("================================")
+            print(
+                f"ELEVENLABS KEY {key_number} ERROR"
+            )
+            print("================================")
+            print(error)
+            print("================================")
+
+            if (
+                "quota" in error_text
+                or "credits" in error_text
+                or "credit" in error_text
+                or "rate limit" in error_text
+                or "too many requests" in error_text
+            ):
+
+                print(
+                    f"API KEY {key_number} "
+                    "HAS NO USABLE QUOTA."
+                )
+
+            elif (
+                "permission" in error_text
+                or "missing_permissions" in error_text
+                or "unauthorized" in error_text
+                or "text_to_speech" in error_text
+            ):
+
+                print(
+                    f"API KEY {key_number} "
+                    "DOES NOT HAVE TTS PERMISSION."
+                )
+
+            else:
+
+                print(
+                    f"API KEY {key_number} FAILED."
+                )
+
+            print(
+                "Trying next ElevenLabs key..."
+            )
+
+    print("")
+    print("================================")
+    print("ELEVENLABS UNAVAILABLE")
+    print("================================")
+    print(
+        "Switching to free female TTS."
+    )
+    print("================================")
+
+    return False
+
+
+async def generate_edge_voice_async(text):
+
+    import edge_tts
+
+    print("")
+    print("================================")
+    print("FREE FEMALE TTS FALLBACK")
+    print("================================")
+    print(
+        f"Voice: {EDGE_VOICE}"
+    )
+    print(
+        "Provider: Microsoft Edge TTS"
+    )
+    print("================================")
+
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=EDGE_VOICE,
+        rate="+0%",
+        volume="+0%",
+        pitch="+0Hz",
+    )
+
+    await communicate.save(
+        OUTPUT_FILE
+    )
+
+
+def generate_edge_voice(text):
+
+    try:
+
+        asyncio.run(
+            generate_edge_voice_async(
+                text
+            )
         )
 
-        sys.exit(1)
+    except Exception as error:
+
+        print("")
+        print("================================")
+        print("FREE TTS ERROR")
+        print("================================")
+        print(error)
+        print("================================")
+
+        return False
+
+    if not os.path.isfile(
+        OUTPUT_FILE
+    ):
+
+        print(
+            "ERROR: voice.mp3 was not created."
+        )
+
+        return False
+
+    size = os.path.getsize(
+        OUTPUT_FILE
+    )
+
+    if size <= 0:
+
+        print(
+            "ERROR: voice.mp3 is empty."
+        )
+
+        return False
+
+    print("")
+    print("================================")
+    print("FREE FEMALE VOICE SUCCESS")
+    print("================================")
+    print(
+        f"Voice: {EDGE_VOICE}"
+    )
+    print(
+        f"Output: {OUTPUT_FILE}"
+    )
+    print(
+        f"File size: {size} bytes"
+    )
+    print(
+        "ElevenLabs credits used: 0"
+    )
+    print("================================")
+
+    return True
+
+
+def main():
+
+    print("================================")
+    print("USA DOSE SMART FEMALE VOICE")
+    print("================================")
+    print(
+        f"Primary: {VOICE_NAME}"
+    )
+    print(
+        f"Fallback: {EDGE_VOICE}"
+    )
+    print("================================")
 
     # ------------------------------------------------------
-    # SCRIPT FILE
+    # READ SCRIPT
     # ------------------------------------------------------
 
     if not os.path.isfile(
@@ -174,10 +377,6 @@ def main():
         text
     )
 
-    # ------------------------------------------------------
-    # SCRIPT CHECK
-    # ------------------------------------------------------
-
     word_count = len(
         text.split()
     )
@@ -199,14 +398,13 @@ def main():
     print("================================")
 
     # ------------------------------------------------------
-    # WORD LIMIT
+    # SAFETY LIMITS
     # ------------------------------------------------------
 
     if word_count < MIN_WORDS:
 
-        print("")
         print(
-            "ERROR: Script is too short."
+            f"ERROR: Script is too short."
         )
 
         print(
@@ -217,58 +415,24 @@ def main():
 
     if word_count > MAX_WORDS:
 
-        print("")
         print(
-            "ERROR: Script is too long."
+            f"ERROR: Script is too long."
         )
 
         print(
             f"Maximum words: {MAX_WORDS}"
         )
 
-        print(
-            "Voice generation cancelled."
-        )
-
         sys.exit(1)
-
-    # ------------------------------------------------------
-    # CHARACTER LIMIT
-    # ------------------------------------------------------
-
-    print("")
-    print("================================")
-    print("ELEVENLABS QUOTA PROTECTION")
-    print("================================")
-    print(
-        f"Characters required: {character_count}"
-    )
-    print(
-        f"Maximum allowed: {MAX_CHARACTERS}"
-    )
-    print("================================")
 
     if character_count > MAX_CHARACTERS:
 
-        print("")
         print(
-            "ERROR: Script exceeds 350 characters."
-        )
-
-        print(
-            "Voice generation cancelled."
-        )
-
-        print(
-            "No ElevenLabs request was sent."
+            "ERROR: Script exceeds "
+            "350 character safety limit."
         )
 
         sys.exit(1)
-
-    print("")
-    print(
-        "Quota check: PASSED"
-    )
 
     # ------------------------------------------------------
     # REMOVE OLD AUDIO
@@ -278,227 +442,69 @@ def main():
         OUTPUT_FILE
     ):
 
-        try:
+        os.remove(
+            OUTPUT_FILE
+        )
 
-            os.remove(
-                OUTPUT_FILE
-            )
+    # ------------------------------------------------------
+    # ELEVENLABS
+    # ------------------------------------------------------
 
-        except Exception as error:
+    api_keys = get_api_keys()
 
-            print(
-                "ERROR removing old voice.mp3:"
-            )
+    print("")
+    print(
+        f"ElevenLabs API keys available: "
+        f"{len(api_keys)}"
+    )
 
-            print(error)
+    if try_elevenlabs(
+        api_keys,
+        text
+    ):
 
-            sys.exit(1)
+        print("")
+        print(
+            "Primary ElevenLabs voice completed."
+        )
 
-    # ======================================================
-    # MULTI KEY FAILOVER
-    # ======================================================
+        return
 
-    for key_number, api_key in api_keys:
+    # ------------------------------------------------------
+    # FREE FALLBACK
+    # ------------------------------------------------------
+
+    if generate_edge_voice(
+        text
+    ):
 
         print("")
         print("================================")
+        print("VOICE GENERATION COMPLETE")
+        print("================================")
         print(
-            f"TRYING ELEVENLABS API KEY {key_number}"
+            "Free female fallback succeeded."
+        )
+        print(
+            "Video generation can continue."
         )
         print("================================")
 
-        try:
+        return
 
-            client = ElevenLabs(
-                api_key=api_key
-            )
-
-            print("")
-            print(
-                "Generating Laura female voice..."
-            )
-
-            audio = client.text_to_speech.convert(
-
-                voice_id=VOICE_ID,
-
-                model_id=MODEL_ID,
-
-                text=text,
-
-                output_format="mp3_44100_128",
-            )
-
-            # --------------------------------------------------
-            # SAVE AUDIO
-            # --------------------------------------------------
-
-            with open(
-                OUTPUT_FILE,
-                "wb"
-            ) as file:
-
-                for chunk in audio:
-
-                    if chunk:
-
-                        file.write(
-                            chunk
-                        )
-
-            # --------------------------------------------------
-            # VERIFY
-            # --------------------------------------------------
-
-            if not os.path.isfile(
-                OUTPUT_FILE
-            ):
-
-                raise RuntimeError(
-                    "voice.mp3 was not created."
-                )
-
-            file_size = os.path.getsize(
-                OUTPUT_FILE
-            )
-
-            if file_size <= 0:
-
-                raise RuntimeError(
-                    "voice.mp3 is empty."
-                )
-
-            # --------------------------------------------------
-            # SUCCESS
-            # --------------------------------------------------
-
-            print("")
-            print("================================")
-            print("VOICE CREATED SUCCESSFULLY")
-            print("================================")
-            print(
-                f"API Key used: {key_number}"
-            )
-            print(
-                f"Voice: {VOICE_NAME}"
-            )
-            print(
-                "Gender: Female"
-            )
-            print(
-                "Accent: American"
-            )
-            print(
-                f"Words: {word_count}"
-            )
-            print(
-                f"Characters: {character_count}"
-            )
-            print(
-                f"Output: {OUTPUT_FILE}"
-            )
-            print(
-                f"File size: {file_size} bytes"
-            )
-            print(
-                "Multi-key failover: ACTIVE"
-            )
-            print("================================")
-
-            return
-
-        except Exception as error:
-
-            error_text = str(
-                error
-            ).lower()
-
-            print("")
-            print("================================")
-            print(
-                f"ELEVENLABS KEY {key_number} ERROR"
-            )
-            print("================================")
-            print(error)
-            print("================================")
-
-            # --------------------------------------------------
-            # QUOTA ERROR
-            # --------------------------------------------------
-
-            quota_error = (
-
-                "quota" in error_text
-
-                or
-
-                "quota_exceeded" in error_text
-
-                or
-
-                "credits" in error_text
-
-                or
-
-                "credit" in error_text
-
-                or
-
-                "rate limit" in error_text
-
-                or
-
-                "too many requests" in error_text
-            )
-
-            if quota_error:
-
-                print("")
-                print(
-                    f"API KEY {key_number} "
-                    "HAS NO USABLE QUOTA."
-                )
-
-                print(
-                    "Trying next API key..."
-                )
-
-                continue
-
-            # --------------------------------------------------
-            # INVALID KEY
-            # --------------------------------------------------
-
-            print("")
-            print(
-                f"API KEY {key_number} "
-                "FAILED."
-            )
-
-            print(
-                "Trying next API key..."
-            )
-
-            continue
-
-    # ======================================================
-    # ALL KEYS FAILED
-    # ======================================================
+    # ------------------------------------------------------
+    # EVERYTHING FAILED
+    # ------------------------------------------------------
 
     print("")
     print("================================")
-    print("ALL ELEVENLABS KEYS FAILED")
+    print("ALL VOICE SYSTEMS FAILED")
     print("================================")
-    print("")
     print(
         "No voice.mp3 was created."
     )
-    print("")
     print(
         "Workflow stopped safely."
-    )
-    print(
-        "Video generation should not continue."
     )
     print("================================")
 
@@ -506,5 +512,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
