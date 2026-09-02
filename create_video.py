@@ -213,9 +213,9 @@ def escape_drawtext(text):
 
 def make_captions(script):
     """
-    Creates a clean subtitle-style text overlay.
+    Creates clean subtitle-style captions.
 
-    It deliberately does NOT add:
+    It does NOT add:
     Voice Over:
     Narration:
     Script:
@@ -229,7 +229,6 @@ def make_captions(script):
     if not words:
         return ""
 
-    # Keep captions short enough to read.
     chunks = []
 
     current = []
@@ -257,8 +256,6 @@ def create_final_video(video, voice, script):
         "DejaVuSans-Bold.ttf"
     )
 
-    # Main caption text.
-    # No channel/production labels are added here.
     caption_text = ""
 
     if captions:
@@ -270,7 +267,11 @@ def create_final_video(video, voice, script):
 
     filters = []
 
-    # Small channel branding only.
+    # ======================================================
+    # USA DOSE BRANDING
+    # ======================================================
+
+    # Main channel name
     filters.append(
         "drawtext="
         f"fontfile={font_bold}:"
@@ -278,13 +279,30 @@ def create_final_video(video, voice, script):
         "fontcolor=white:"
         "fontsize=58:"
         "x=(w-text_w)/2:"
-        "y=95:"
+        "y=80:"
         "box=1:"
         "boxcolor=black@0.45:"
         "boxborderw=14"
     )
 
-    # Captions are intentionally clean.
+    # Subscribe text directly below channel name
+    filters.append(
+        "drawtext="
+        f"fontfile={font_bold}:"
+        "text='SUBSCRIBE':"
+        "fontcolor=white:"
+        "fontsize=30:"
+        "x=(w-text_w)/2:"
+        "y=155:"
+        "box=1:"
+        "boxcolor=black@0.40:"
+        "boxborderw=9"
+    )
+
+    # ======================================================
+    # CLEAN CAPTIONS
+    # ======================================================
+
     if caption_text:
         filters.append(
             "drawtext="
@@ -450,7 +468,7 @@ def main():
 
     print("")
     print("================================")
-    print("ADDING VOICE + CLEAN CAPTIONS")
+    print("ADDING VOICE + BRANDING + CAPTIONS")
     print("================================")
 
     create_final_video(
@@ -494,6 +512,9 @@ def main():
     )
     print(
         "Captions: CLEAN"
+    )
+    print(
+        "Branding: USA DOSE + SUBSCRIBE"
     )
     print(
         "Production labels: NONE"
