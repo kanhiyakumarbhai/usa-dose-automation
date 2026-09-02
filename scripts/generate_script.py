@@ -433,32 +433,87 @@ def generate_content():
     print("USA DOSE SMART SCRIPT GENERATOR")
     print("========================================")
     print(f"Model: {MODEL}")
-    print(f"Date: {datetime.utcnow().strftime('%Y-%m-%d')}")
+    print(f"Date: {datetime.now().strftime('%Y-%m-%d')}")
     print("Generating original factual Short...")
     print()
 
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=PROMPT
+    last_error = None
+
+    # Try Gemini up to 3 times
+    for attempt in range(1, 4):
+
+        try:
+
+            print("----------------------------------------")
+            print(f"Gemini attempt {attempt}/3")
+            print("----------------------------------------")
+
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=PROMPT
+            )
+
+            # Check for empty response
+            if not response or not response.text:
+                raise ValueError(
+                    "Gemini returned an empty response."
+                )
+
+            raw_text = response.text.strip()
+
+            if not raw_text:
+                raise ValueError(
+                    "Gemini returned empty text."
+                )
+
+            print("Gemini response received.")
+            print()
+
+            # Parse response
+            script, title, hashtags = parse_response(
+                raw_text
+            )
+
+            # Validate generated content
+            script, title, hashtags = validate_script(
+                script,
+                title,
+                hashtags
+            )
+
+            print("Gemini generation successful.")
+            print()
+
+            return script, title, hashtags
+
+        except Exception as e:
+
+            last_error = e
+
+            print()
+            print("Gemini attempt failed.")
+            print(f"Error: {e}")
+            print()
+
+            # Retry if attempts remain
+            if attempt < 3:
+
+                import time
+
+                wait_time = attempt * 10
+
+                print(
+                    f"Retrying Gemini in "
+                    f"{wait_time} seconds..."
+                )
+
+                time.sleep(wait_time)
+
+    # All attempts failed
+    raise RuntimeError(
+        "Gemini failed after 3 attempts. "
+        f"Last error: {last_error}"
     )
-
-    if not response or not response.text:
-        raise ValueError("Gemini returned an empty response.")
-
-    raw_text = response.text.strip()
-
-    print("Gemini response received.")
-    print()
-
-    script, title, hashtags = parse_response(raw_text)
-
-    script, title, hashtags = validate_script(
-        script,
-        title,
-        hashtags
-    )
-
-    return script, title, hashtags
 
 
 # ============================================================
