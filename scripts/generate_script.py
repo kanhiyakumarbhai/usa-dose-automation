@@ -44,8 +44,8 @@ Topic:
 One surprising, true and interesting fact or story about the USA.
 
 IMPORTANT:
-The narration MUST be between 30 and 55 words.
-Do not write more than 55 words.
+The narration MUST be between 65 and 75 words.
+Do not write more than 75 words.
 
 Requirements:
 - Strong curiosity hook immediately.
@@ -65,7 +65,7 @@ Requirements:
 Return EXACTLY:
 
 SCRIPT:
-[30-55 word narration]
+[65-75 word narration]
 
 TITLE:
 [short curiosity title]
@@ -153,15 +153,15 @@ def validate(script, title, hashtags):
     print(f"Characters: {len(script)}", flush=True)
 
     # Compatible with female voice generator.
-    if words < 30:
+    if words < 65:
         raise ValueError(
-            f"Script is too short. Minimum words: 30. "
+            f"Script is too short. Minimum words: 65. "
             f"Generated: {words}"
         )
 
-    if words > 55:
+    if words > 75:
         raise ValueError(
-            f"Script is too long. Maximum words: 55. "
+            f"Script is too long. Maximum words: 75. "
             f"Generated: {words}"
         )
 
