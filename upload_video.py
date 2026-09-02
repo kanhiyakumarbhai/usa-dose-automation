@@ -15,7 +15,7 @@ VIDEO_FILE = "usa_dose_short.mp4"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
-PRIVACY_STATUS = "private"
+PRIVACY_STATUS = "public"
 
 CATEGORY_ID = "25"
 
