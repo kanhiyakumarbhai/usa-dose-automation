@@ -13,9 +13,9 @@ MODEL_ID = "eleven_multilingual_v2"
 SCRIPT_FILE = "daily_script.txt"
 OUTPUT_FILE = "voice.mp3"
 
-MIN_WORDS = 40
-MAX_WORDS = 55
-MAX_CHARACTERS = 350
+MIN_WORDS =65
+MAX_WORDS = 75
+MAX_CHARACTERS = 500
 
 # Free fallback female US voice
 EDGE_VOICE = "en-US-JennyNeural"
