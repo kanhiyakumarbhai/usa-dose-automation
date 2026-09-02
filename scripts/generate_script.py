@@ -5,12 +5,6 @@ import time
 from datetime import datetime
 
 from google import genai
-from google.genai import types
-
-
-# ============================================================
-# CONFIG
-# ============================================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -18,7 +12,11 @@ if not API_KEY:
     print("ERROR: GEMINI_API_KEY is missing.")
     sys.exit(1)
 
-client = genai.Client(api_key=API_KEY)
+print("Creating Gemini client...", flush=True)
+
+client = genai.Client(
+    api_key=API_KEY
+)
 
 MODEL = "gemini-3.7-flash"
 
@@ -27,78 +25,64 @@ TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
 
-# ============================================================
-# FAST PROMPT
-# ============================================================
-
 PROMPT = """
-You are the script writer for a YouTube Shorts channel called USA Dose.
+Write ONE original USA-related YouTube Short.
 
-Create ONE original, factual and interesting USA-related Short for a broad adult audience ages 18-70.
+Audience: adults 18-70.
 
-Requirements:
-- 75-105 words for the spoken script.
-- Start with a strong curiosity hook.
+Rules:
+- 75-105 words.
+- Strong curiosity hook in the first sentence.
+- One surprising factual USA story.
 - Build suspense.
-- Do not reveal the main answer immediately.
-- Use simple natural English.
-- Fast, engaging storytelling.
-- Focus on one surprising USA fact, mystery, place, event, invention, law, history fact, money fact, or unusual discovery.
-- Avoid politics unless absolutely necessary.
-- Avoid fake facts and exaggerated claims.
-- Do not use emojis in the spoken script.
-- End naturally with a short question that encourages comments.
+- Do not reveal the answer immediately.
+- Simple natural American English.
+- Fast storytelling.
+- No politics.
+- No fake or exaggerated claims.
+- No emojis.
+- End with a natural question.
 
-Return EXACTLY this format:
+Return ONLY this:
 
 SCRIPT:
-[spoken narration]
+[75-105 word narration]
 
 TITLE:
-[a short curiosity-based title]
+[short curiosity title]
 
 HASHTAGS:
 #USA #America #Facts #Shorts
 """
 
 
-# ============================================================
-# CLEAN TEXT
-# ============================================================
-
-def clean_text(text):
+def clean(text):
     text = text.strip()
-
-    # Remove accidental markdown code fences
-    text = re.sub(r"```(?:text|txt)?", "", text, flags=re.IGNORECASE)
+    text = text.replace("```text", "")
+    text = text.replace("```txt", "")
     text = text.replace("```", "")
-
     return text.strip()
 
 
-# ============================================================
-# PARSE GEMINI RESPONSE
-# ============================================================
-
 def parse_response(text):
-    text = clean_text(text)
+    text = clean(text)
 
     script_match = re.search(
         r"SCRIPT:\s*(.*?)(?=\n\s*TITLE:)",
         text,
-        flags=re.DOTALL | re.IGNORECASE
+        re.IGNORECASE | re.DOTALL
     )
 
     title_match = re.search(
         r"TITLE:\s*(.*?)(?=\n\s*HASHTAGS:)",
         text,
-        flags=re.DOTALL | re.IGNORECASE
+        re.IGNORECASE | re.DOTALL
     )
 
     hashtags_match = re.search(
         r"HASHTAGS:\s*(.*)$",
         text,
-        flags=re.DOTALL | re.IGNORECASE
+        re.IGNORECASE | re.DOTALL
     )
 
     if not script_match:
@@ -110,35 +94,28 @@ def parse_response(text):
     if not hashtags_match:
         raise ValueError("HASHTAGS section missing.")
 
-    script = clean_text(script_match.group(1))
-    title = clean_text(title_match.group(1))
-    hashtags = clean_text(hashtags_match.group(1))
+    script = clean(script_match.group(1))
+    title = clean(title_match.group(1))
+    hashtags = clean(hashtags_match.group(1))
 
     return script, title, hashtags
 
 
-# ============================================================
-# VALIDATE
-# ============================================================
+def validate(script, title, hashtags):
 
-def validate_content(script, title, hashtags):
+    word_count = len(script.split())
 
-    words = len(script.split())
+    print(f"Generated words: {word_count}", flush=True)
 
-    print(f"Generated script words: {words}")
-
-    if words < 60:
+    if word_count < 60:
         raise ValueError(
-            f"Script too short: {words} words."
+            f"Script too short: {word_count} words"
         )
 
-    if words > 120:
+    if word_count > 120:
         raise ValueError(
-            f"Script too long: {words} words."
+            f"Script too long: {word_count} words"
         )
-
-    if len(title) < 5:
-        raise ValueError("Generated title is too short.")
 
     if "#USA" not in hashtags:
         hashtags += " #USA"
@@ -149,142 +126,156 @@ def validate_content(script, title, hashtags):
     return script, title, hashtags
 
 
-# ============================================================
-# GEMINI GENERATION
-# ============================================================
+def generate():
 
-def generate_content():
+    print("================================", flush=True)
+    print("USA DOSE SCRIPT GENERATOR", flush=True)
+    print("================================", flush=True)
 
-    print("================================")
-    print("USA DOSE FAST SCRIPT GENERATOR")
-    print("================================")
-    print(f"Model: {MODEL}")
-    print(f"Date: {datetime.now().strftime('%Y-%m-%d')}")
-    print("Generating daily script...")
-    print()
-
-    last_error = None
-
-    # Only 2 attempts.
-    # This prevents the workflow from getting stuck
-    # in endless retries.
-    for attempt in range(1, 3):
-
-        print(f"Attempt {attempt}/2...")
-
-        try:
-
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=PROMPT,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=350,
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level="low"
-                    )
-                )
-            )
-
-            if not response:
-                raise ValueError("Empty Gemini response.")
-
-            raw_text = getattr(response, "text", None)
-
-            if not raw_text:
-                raise ValueError("Gemini returned empty text.")
-
-            print("Gemini response received.")
-
-            script, title, hashtags = parse_response(raw_text)
-
-            script, title, hashtags = validate_content(
-                script,
-                title,
-                hashtags
-            )
-
-            return script, title, hashtags
-
-        except Exception as e:
-
-            last_error = e
-
-            print(f"Attempt {attempt} failed:")
-            print(str(e))
-
-            if attempt < 2:
-                print("Waiting 5 seconds before final retry...")
-                time.sleep(5)
-
-    raise RuntimeError(
-        f"Gemini generation failed after 2 attempts: {last_error}"
+    print(
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        flush=True
     )
 
+    print(
+        f"Model: {MODEL}",
+        flush=True
+    )
 
-# ============================================================
-# SAVE FILES
-# ============================================================
+    print(
+        "Starting Gemini request...",
+        flush=True
+    )
 
-def save_files(script, title, hashtags):
-
-    with open(SCRIPT_FILE, "w", encoding="utf-8") as f:
-        f.write(script)
-
-    with open(TITLE_FILE, "w", encoding="utf-8") as f:
-        f.write(title)
-
-    with open(HASHTAGS_FILE, "w", encoding="utf-8") as f:
-        f.write(hashtags)
-
-    print()
-    print("Files saved:")
-    print(f"- {SCRIPT_FILE}")
-    print(f"- {TITLE_FILE}")
-    print(f"- {HASHTAGS_FILE}")
-
-
-# ============================================================
-# MAIN
-# ============================================================
-
-def main():
-
-    start_time = time.time()
+    start = time.time()
 
     try:
 
-        script, title, hashtags = generate_content()
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=PROMPT
+        )
 
-        save_files(
+    except Exception as e:
+
+        print(
+            "Gemini API ERROR:",
+            repr(e),
+            flush=True
+        )
+
+        raise
+
+    elapsed = time.time() - start
+
+    print(
+        f"Gemini response received in {elapsed:.1f} seconds.",
+        flush=True
+    )
+
+    if response is None:
+        raise ValueError("Gemini returned no response.")
+
+    text = getattr(response, "text", None)
+
+    if not text:
+        raise ValueError(
+            "Gemini returned empty text."
+        )
+
+    print("Parsing Gemini response...", flush=True)
+
+    script, title, hashtags = parse_response(text)
+
+    script, title, hashtags = validate(
+        script,
+        title,
+        hashtags
+    )
+
+    return script, title, hashtags
+
+
+def save(script, title, hashtags):
+
+    with open(
+        SCRIPT_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+        f.write(script)
+
+    with open(
+        TITLE_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+        f.write(title)
+
+    with open(
+        HASHTAGS_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+        f.write(hashtags)
+
+    print("", flush=True)
+
+    print("FILES CREATED:", flush=True)
+    print(f"✓ {SCRIPT_FILE}", flush=True)
+    print(f"✓ {TITLE_FILE}", flush=True)
+    print(f"✓ {HASHTAGS_FILE}", flush=True)
+
+
+def main():
+
+    total_start = time.time()
+
+    try:
+
+        script, title, hashtags = generate()
+
+        save(
             script,
             title,
             hashtags
         )
 
-        elapsed = time.time() - start_time
+        total_time = time.time() - total_start
 
-        print()
-        print("================================")
-        print("SCRIPT GENERATION SUCCESS")
-        print("================================")
-        print(f"Generation time: {elapsed:.1f} seconds")
-        print()
-        print("TITLE:")
-        print(title)
-        print()
-        print("SCRIPT:")
-        print(script)
-        print()
-        print("HASHTAGS:")
-        print(hashtags)
+        print("", flush=True)
+        print("================================", flush=True)
+        print("SCRIPT GENERATION SUCCESS", flush=True)
+        print("================================", flush=True)
+
+        print(
+            f"Total time: {total_time:.1f} seconds",
+            flush=True
+        )
+
+        print("", flush=True)
+        print("TITLE:", flush=True)
+        print(title, flush=True)
+
+        print("", flush=True)
+        print("SCRIPT:", flush=True)
+        print(script, flush=True)
+
+        print("", flush=True)
+        print("HASHTAGS:", flush=True)
+        print(hashtags, flush=True)
 
     except Exception as e:
 
-        print()
-        print("================================")
-        print("SCRIPT GENERATION FAILED")
-        print("================================")
-        print(str(e))
+        print("", flush=True)
+        print("================================", flush=True)
+        print("SCRIPT GENERATION FAILED", flush=True)
+        print("================================", flush=True)
+
+        print(
+            repr(e),
+            flush=True
+        )
 
         sys.exit(1)
 
