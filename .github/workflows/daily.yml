@@ -4,18 +4,24 @@ on:
   workflow_dispatch:
 
   schedule:
-  # 3:00 AM IST
-  - cron: "30 21 * * *"
+    # 3:00 AM IST
+    - cron: "30 21 * * *"
 
-  # 5:30 PM IST
-  - cron: "00 12 * * *"
-  
+    # 5:30 PM IST
+    - cron: "00 12 * * *"
+
 permissions:
   contents: write
 
 jobs:
   daily:
     runs-on: ubuntu-latest
+
+    # ==================================================
+    # MAXIMUM WORKFLOW TIME
+    # ==================================================
+
+    timeout-minutes: 30
 
     steps:
 
@@ -147,7 +153,28 @@ jobs:
           echo "GENERATING DAILY SCRIPT"
           echo "================================"
 
-          python scripts/generate_script.py
+          echo "Gemini script generation timeout: 120 seconds"
+
+          timeout --signal=TERM --kill-after=10s 120s \
+            python scripts/generate_script.py
+
+          RESULT=$?
+
+          if [ "$RESULT" -eq 124 ]; then
+            echo ""
+            echo "ERROR: Gemini script generation timed out after 120 seconds."
+            echo "The workflow was stopped instead of waiting indefinitely."
+            exit 1
+          fi
+
+          if [ "$RESULT" -ne 0 ]; then
+            echo ""
+            echo "ERROR: Script generation failed."
+            exit "$RESULT"
+          fi
+
+          echo ""
+          echo "Daily script generation finished."
 
       # ==================================================
       # CHECK SCRIPT
