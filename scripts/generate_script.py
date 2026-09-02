@@ -11,7 +11,8 @@ if not API_KEY:
     print("ERROR: GEMINI_API_KEY is missing.", flush=True)
     sys.exit(1)
 
-MODEL = "gemini-3.7-flash"
+# Fast model
+MODEL = "gemini-3.5-flash-lite"
 
 API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -23,30 +24,33 @@ SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
-PROMPT = """
-Write ONE original USA-related YouTube Short.
 
-Audience: adults ages 18-70.
+PROMPT = """
+Create ONE original YouTube Shorts script for a channel called USA Dose.
+
+Audience: adults 18-70.
+
+Topic:
+A surprising, true and interesting fact or story about the USA.
 
 Requirements:
-- 75-105 words.
-- Strong curiosity hook immediately.
-- One surprising factual USA story.
-- Build suspense.
-- Do not reveal the answer immediately.
+- 65-90 words only.
+- Strong curiosity hook in the first sentence.
+- Create suspense.
+- Do NOT reveal the answer immediately.
 - Simple natural American English.
-- Fast engaging storytelling.
-- Universal topic.
+- Fast storytelling.
 - No politics.
 - No fake facts.
 - No exaggeration.
 - No emojis.
 - End with a natural question.
+- Make it interesting for a broad adult audience.
 
-Return ONLY:
+Return EXACTLY this format:
 
 SCRIPT:
-[75-105 word narration]
+[script]
 
 TITLE:
 [short curiosity title]
@@ -58,17 +62,21 @@ HASHTAGS:
 
 def clean(text):
     text = text.strip()
+
     text = re.sub(
         r"```(?:text|txt)?",
         "",
         text,
         flags=re.IGNORECASE
     )
+
     text = text.replace("```", "")
+
     return text.strip()
 
 
 def parse_response(text):
+
     text = clean(text)
 
     script_match = re.search(
@@ -98,24 +106,25 @@ def parse_response(text):
     if not hashtags_match:
         raise ValueError("HASHTAGS section missing.")
 
-    return (
-        clean(script_match.group(1)),
-        clean(title_match.group(1)),
-        clean(hashtags_match.group(1))
-    )
+    script = clean(script_match.group(1))
+    title = clean(title_match.group(1))
+    hashtags = clean(hashtags_match.group(1))
+
+    return script, title, hashtags
 
 
 def validate(script, title, hashtags):
+
     words = len(script.split())
 
     print(f"Generated words: {words}", flush=True)
 
-    if words < 60:
+    if words < 50:
         raise ValueError(
             f"Script too short: {words} words."
         )
 
-    if words > 120:
+    if words > 110:
         raise ValueError(
             f"Script too long: {words} words."
         )
@@ -133,6 +142,7 @@ def validate(script, title, hashtags):
 
 
 def call_gemini():
+
     headers = {
         "Content-Type": "application/json"
     }
@@ -146,19 +156,24 @@ def call_gemini():
                     }
                 ]
             }
-        ]
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 180
+        }
     }
 
-    print("Sending direct Gemini REST request...", flush=True)
+    print(
+        f"Sending request to {MODEL}...",
+        flush=True
+    )
 
     response = requests.post(
         API_URL,
-        params={
-            "key": API_KEY
-        },
+        params={"key": API_KEY},
         headers=headers,
         json=payload,
-        timeout=45
+        timeout=(10, 25)
     )
 
     print(
@@ -167,16 +182,29 @@ def call_gemini():
     )
 
     if response.status_code != 200:
+
+        error_text = response.text[:1500]
+
         raise RuntimeError(
             f"Gemini API error {response.status_code}: "
-            f"{response.text[:1000]}"
+            f"{error_text}"
         )
 
     data = response.json()
 
     try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError):
+
+        text = (
+            data["candidates"][0]
+            ["content"]["parts"][0]["text"]
+        )
+
+    except (
+        KeyError,
+        IndexError,
+        TypeError
+    ):
+
         raise RuntimeError(
             "Gemini returned an unexpected response: "
             + str(data)[:1500]
@@ -191,8 +219,9 @@ def call_gemini():
 
 
 def generate():
+
     print("================================", flush=True)
-    print("USA DOSE DIRECT GEMINI GENERATOR", flush=True)
+    print("USA DOSE FAST GEMINI GENERATOR", flush=True)
     print("================================", flush=True)
 
     print(
@@ -214,6 +243,7 @@ def generate():
         )
 
         try:
+
             raw = call_gemini()
 
             print(
@@ -245,7 +275,7 @@ def generate():
 
             if attempt < 3:
 
-                wait = attempt * 8
+                wait = 3
 
                 print(
                     f"Waiting {wait} seconds...",
@@ -267,6 +297,7 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(script)
 
     with open(
@@ -274,6 +305,7 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(title)
 
     with open(
@@ -281,14 +313,30 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(hashtags)
 
     print("", flush=True)
 
-    print("Files saved successfully:", flush=True)
-    print(f"OK {SCRIPT_FILE}", flush=True)
-    print(f"OK {TITLE_FILE}", flush=True)
-    print(f"OK {HASHTAGS_FILE}", flush=True)
+    print(
+        "Files saved successfully:",
+        flush=True
+    )
+
+    print(
+        f"OK {SCRIPT_FILE}",
+        flush=True
+    )
+
+    print(
+        f"OK {TITLE_FILE}",
+        flush=True
+    )
+
+    print(
+        f"OK {HASHTAGS_FILE}",
+        flush=True
+    )
 
 
 def main():
@@ -308,9 +356,21 @@ def main():
         elapsed = time.time() - start
 
         print("", flush=True)
-        print("================================", flush=True)
-        print("SCRIPT GENERATION SUCCESS", flush=True)
-        print("================================", flush=True)
+
+        print(
+            "================================",
+            flush=True
+        )
+
+        print(
+            "SCRIPT GENERATION SUCCESS",
+            flush=True
+        )
+
+        print(
+            "================================",
+            flush=True
+        )
 
         print(
             f"Generation time: {elapsed:.1f} seconds",
@@ -318,23 +378,38 @@ def main():
         )
 
         print("", flush=True)
+
         print("TITLE:", flush=True)
         print(title, flush=True)
 
         print("", flush=True)
+
         print("SCRIPT:", flush=True)
         print(script, flush=True)
 
         print("", flush=True)
+
         print("HASHTAGS:", flush=True)
         print(hashtags, flush=True)
 
     except Exception as error:
 
         print("", flush=True)
-        print("================================", flush=True)
-        print("SCRIPT GENERATION FAILED", flush=True)
-        print("================================", flush=True)
+
+        print(
+            "================================",
+            flush=True
+        )
+
+        print(
+            "SCRIPT GENERATION FAILED",
+            flush=True
+        )
+
+        print(
+            "================================",
+            flush=True
+        )
 
         print(
             repr(error),
