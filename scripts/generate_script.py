@@ -17,7 +17,6 @@ if not API_KEY:
     sys.exit(1)
 
 
-# Fast Gemini model
 MODEL = "gemini-3.5-flash-lite"
 
 API_URL = (
@@ -25,7 +24,6 @@ API_URL = (
     + MODEL
     + ":generateContent"
 )
-
 
 SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
@@ -37,19 +35,22 @@ HASHTAGS_FILE = "video_hashtags.txt"
 # ============================================================
 
 PROMPT = """
-Create ONE original YouTube Shorts script for a channel called USA Dose.
+Create ONE original YouTube Shorts narration for USA Dose.
 
 Audience:
 Adults ages 18-70.
 
 Topic:
-A surprising, true and interesting fact or story about the USA.
+One surprising, true and interesting fact or story about the USA.
+
+IMPORTANT:
+The narration MUST be between 30 and 55 words.
+Do not write more than 55 words.
 
 Requirements:
-- 45-55 words ONLY.
-- Strong curiosity hook in the first sentence.
-- Create suspense.
-- Do NOT reveal the answer immediately.
+- Strong curiosity hook immediately.
+- Build suspense.
+- Do not reveal the answer immediately.
 - Simple natural American English.
 - Fast storytelling.
 - One clear topic.
@@ -61,16 +62,16 @@ Requirements:
 - No unnecessary introduction.
 - End with a natural question.
 
-Return EXACTLY this format:
+Return EXACTLY:
 
 SCRIPT:
-[45-55 word narration]
+[30-55 word narration]
 
 TITLE:
 [short curiosity title]
 
 HASHTAGS:
-#USA #America #Facts #Shorts
+#USA #America #AmericanFacts #DidYouKnow #Facts #Shorts
 """
 
 
@@ -79,6 +80,7 @@ HASHTAGS:
 # ============================================================
 
 def clean(text):
+
     text = text.strip()
 
     text = re.sub(
@@ -94,7 +96,7 @@ def clean(text):
 
 
 # ============================================================
-# PARSE GEMINI RESPONSE
+# PARSE RESPONSE
 # ============================================================
 
 def parse_response(text):
@@ -150,10 +152,10 @@ def validate(script, title, hashtags):
     print(f"Words: {words}", flush=True)
     print(f"Characters: {len(script)}", flush=True)
 
-    # Voice generator has a 55-word maximum.
-    if words < 45:
+    # Compatible with female voice generator.
+    if words < 30:
         raise ValueError(
-            f"Script is too short. Minimum words: 45. "
+            f"Script is too short. Minimum words: 30. "
             f"Generated: {words}"
         )
 
@@ -168,6 +170,12 @@ def validate(script, title, hashtags):
 
     if "#USA" not in hashtags:
         hashtags += " #USA"
+
+    if "#America" not in hashtags:
+        hashtags += " #America"
+
+    if "#Facts" not in hashtags:
+        hashtags += " #Facts"
 
     if "#Shorts" not in hashtags:
         hashtags += " #Shorts"
@@ -258,7 +266,7 @@ def call_gemini():
 
 
 # ============================================================
-# GENERATE SCRIPT
+# GENERATE
 # ============================================================
 
 def generate():
@@ -344,7 +352,6 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
-
         f.write(script)
 
     with open(
@@ -352,7 +359,6 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
-
         f.write(title)
 
     with open(
@@ -360,25 +366,13 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
-
         f.write(hashtags)
 
     print("", flush=True)
 
-    print(
-        "================================",
-        flush=True
-    )
-
-    print(
-        "FILES SAVED",
-        flush=True
-    )
-
-    print(
-        "================================",
-        flush=True
-    )
+    print("================================", flush=True)
+    print("FILES SAVED", flush=True)
+    print("================================", flush=True)
 
     print(
         f"OK: {SCRIPT_FILE}",
@@ -418,20 +412,9 @@ def main():
 
         print("", flush=True)
 
-        print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            "SCRIPT GENERATION SUCCESS",
-            flush=True
-        )
-
-        print(
-            "================================",
-            flush=True
-        )
+        print("================================", flush=True)
+        print("SCRIPT GENERATION SUCCESS", flush=True)
+        print("================================", flush=True)
 
         print(
             f"Generation time: {elapsed:.1f} seconds",
@@ -457,20 +440,9 @@ def main():
 
         print("", flush=True)
 
-        print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            "SCRIPT GENERATION FAILED",
-            flush=True
-        )
-
-        print(
-            "================================",
-            flush=True
-        )
+        print("================================", flush=True)
+        print("SCRIPT GENERATION FAILED", flush=True)
+        print("================================", flush=True)
 
         print(
             repr(error),
