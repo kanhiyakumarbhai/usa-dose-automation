@@ -5,13 +5,19 @@ import time
 import requests
 from datetime import datetime
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not API_KEY:
     print("ERROR: GEMINI_API_KEY is missing.", flush=True)
     sys.exit(1)
 
-# Fast model
+
+# Fast Gemini model
 MODEL = "gemini-3.5-flash-lite"
 
 API_URL = (
@@ -20,37 +26,45 @@ API_URL = (
     + ":generateContent"
 )
 
+
 SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
 
+# ============================================================
+# PROMPT
+# ============================================================
+
 PROMPT = """
 Create ONE original YouTube Shorts script for a channel called USA Dose.
 
-Audience: adults 18-70.
+Audience:
+Adults ages 18-70.
 
 Topic:
 A surprising, true and interesting fact or story about the USA.
 
 Requirements:
-- 65-90 words only.
+- 45-55 words ONLY.
 - Strong curiosity hook in the first sentence.
 - Create suspense.
 - Do NOT reveal the answer immediately.
 - Simple natural American English.
 - Fast storytelling.
+- One clear topic.
+- Interesting for a broad adult audience.
 - No politics.
 - No fake facts.
 - No exaggeration.
 - No emojis.
+- No unnecessary introduction.
 - End with a natural question.
-- Make it interesting for a broad adult audience.
 
 Return EXACTLY this format:
 
 SCRIPT:
-[script]
+[45-55 word narration]
 
 TITLE:
 [short curiosity title]
@@ -59,6 +73,10 @@ HASHTAGS:
 #USA #America #Facts #Shorts
 """
 
+
+# ============================================================
+# CLEAN TEXT
+# ============================================================
 
 def clean(text):
     text = text.strip()
@@ -74,6 +92,10 @@ def clean(text):
 
     return text.strip()
 
+
+# ============================================================
+# PARSE GEMINI RESPONSE
+# ============================================================
 
 def parse_response(text):
 
@@ -113,20 +135,32 @@ def parse_response(text):
     return script, title, hashtags
 
 
+# ============================================================
+# VALIDATE SCRIPT
+# ============================================================
+
 def validate(script, title, hashtags):
 
     words = len(script.split())
 
-    print(f"Generated words: {words}", flush=True)
+    print("================================", flush=True)
+    print("SCRIPT CHECK", flush=True)
+    print("================================", flush=True)
 
-    if words < 50:
+    print(f"Words: {words}", flush=True)
+    print(f"Characters: {len(script)}", flush=True)
+
+    # Voice generator has a 55-word maximum.
+    if words < 45:
         raise ValueError(
-            f"Script too short: {words} words."
+            f"Script is too short. Minimum words: 45. "
+            f"Generated: {words}"
         )
 
-    if words > 110:
+    if words > 55:
         raise ValueError(
-            f"Script too long: {words} words."
+            f"Script is too long. Maximum words: 55. "
+            f"Generated: {words}"
         )
 
     if len(title) < 5:
@@ -140,6 +174,10 @@ def validate(script, title, hashtags):
 
     return script, title, hashtags
 
+
+# ============================================================
+# CALL GEMINI
+# ============================================================
 
 def call_gemini():
 
@@ -159,7 +197,7 @@ def call_gemini():
         ],
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 180
+            "maxOutputTokens": 160
         }
     }
 
@@ -211,12 +249,17 @@ def call_gemini():
         )
 
     if not text.strip():
+
         raise RuntimeError(
             "Gemini returned empty text."
         )
 
     return text
 
+
+# ============================================================
+# GENERATE SCRIPT
+# ============================================================
 
 def generate():
 
@@ -290,6 +333,10 @@ def generate():
     )
 
 
+# ============================================================
+# SAVE FILES
+# ============================================================
+
 def save_files(script, title, hashtags):
 
     with open(
@@ -319,25 +366,39 @@ def save_files(script, title, hashtags):
     print("", flush=True)
 
     print(
-        "Files saved successfully:",
+        "================================",
         flush=True
     )
 
     print(
-        f"OK {SCRIPT_FILE}",
+        "FILES SAVED",
         flush=True
     )
 
     print(
-        f"OK {TITLE_FILE}",
+        "================================",
         flush=True
     )
 
     print(
-        f"OK {HASHTAGS_FILE}",
+        f"OK: {SCRIPT_FILE}",
         flush=True
     )
 
+    print(
+        f"OK: {TITLE_FILE}",
+        flush=True
+    )
+
+    print(
+        f"OK: {HASHTAGS_FILE}",
+        flush=True
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
@@ -418,6 +479,10 @@ def main():
 
         sys.exit(1)
 
+
+# ============================================================
+# START
+# ============================================================
 
 if __name__ == "__main__":
     main()
