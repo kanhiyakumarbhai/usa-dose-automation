@@ -1,607 +1,528 @@
 import os
 import re
 import sys
-import time
-
+from datetime import datetime
 from google import genai
 
+# ============================================================
+# USA DOSE - UNIVERSAL SHORTS SCRIPT GENERATOR
+# ============================================================
 
-# ==========================================================
-# USA DOSE - DAILY SCRIPT GENERATOR
-# ==========================================================
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not API_KEY:
+    print("ERROR: GEMINI_API_KEY is missing.")
+    sys.exit(1)
+
+client = genai.Client(api_key=API_KEY)
+
+MODEL = "gemini-3.7-flash"
 
 SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
 
-MIN_WORDS = 40
-MAX_WORDS = 55
-MAX_CHARACTERS = 350
 
-MODEL = "gemini-3.6-flash"
+# ============================================================
+# PROMPT
+# ============================================================
 
-API_KEY = (
-    os.getenv("GEMINI_API_KEY")
-    or os.getenv("GOOGLE_API_KEY")
-)
+PROMPT = r"""
+You are the senior content writer for a high-retention YouTube Shorts
+channel called "USA Dose".
 
-if not API_KEY:
-    print("ERROR: GEMINI_API_KEY / GOOGLE_API_KEY is missing.")
-    sys.exit(1)
+Your job is to create ONE completely original, factual, highly engaging
+YouTube Short for a broad adult American audience roughly ages 18-70.
 
-client = genai.Client(api_key=API_KEY)
+The video must feel like a human storyteller discovered something
+interesting and is telling the viewer about it.
+
+============================================================
+CONTENT GOAL
+============================================================
+
+Create a topic that can attract viewers through curiosity.
+
+Good topic categories include:
+
+- strange places in America
+- unusual American history
+- mysterious events
+- forgotten disasters
+- abandoned places
+- strange inventions
+- surprising American businesses
+- unusual laws or rules
+- strange towns
+- hidden locations
+- incredible survival stories
+- unusual people or events
+- technology that changed America
+- money/business stories
+- engineering achievements
+- things Americans commonly see but don't know the story behind
+- little-known historical facts
+- unexpected reasons behind familiar American things
+
+Do NOT make every video about the same type of topic.
+
+Rotate subjects naturally.
+
+============================================================
+FACTUAL ACCURACY
+============================================================
+
+This is extremely important.
+
+Never invent:
+
+- statistics
+- quotes
+- dates
+- names
+- locations
+- scientific claims
+- historical events
+- laws
+- deaths
+- population numbers
+- government information
+
+If a detail is uncertain, leave it out.
+
+Prefer well-established factual information.
+
+Do not make a false statement just to make the story more exciting.
+
+============================================================
+HOOK
+============================================================
+
+The FIRST sentence must immediately create curiosity.
+
+Do NOT begin with:
+
+"Today we're going to..."
+"Did you know..."
+"Welcome back..."
+"Here's an interesting fact..."
+"In this video..."
+"Have you ever wondered..."
+
+Instead begin with a strong curiosity-driven statement or question.
+
+Examples of the STYLE:
+
+"There's a town in America that almost disappeared overnight."
+
+"One of the strangest buildings in America was never meant to be used
+the way you think."
+
+"Thousands of people drive past this place without knowing what happened
+there."
+
+"America once built something so strange that people still talk about it."
+
+Do not copy these examples.
+
+Create a new hook for the chosen story.
+
+============================================================
+STORY STRUCTURE
+============================================================
+
+Use this structure:
+
+1. HOOK
+   Immediately create curiosity.
+
+2. SETUP
+   Give only enough information to make the viewer understand the story.
+
+3. ESCALATION
+   Introduce increasingly surprising details.
+
+4. TWIST
+   Somewhere around the middle, reveal a detail that changes how the
+   viewer understands the story.
+
+5. REVEAL
+   Give the satisfying explanation or important fact.
+
+6. FINAL CURIOSITY
+   End with one memorable detail or thought.
+
+7. NATURAL ENGAGEMENT
+   Ask a simple question that encourages comments.
+
+The viewer should feel:
+
+"I need to know what happens next."
+
+============================================================
+RETENTION RULES
+============================================================
+
+Never reveal the entire answer in the first few seconds.
+
+Keep information moving.
+
+Every 2-4 seconds of narration should introduce either:
+
+- a new fact
+- a new question
+- a visual opportunity
+- a surprising detail
+- a change in direction
+- a consequence
+- a piece of the mystery
+
+Avoid long explanations.
+
+Avoid filler.
+
+Avoid repeating the same fact.
+
+Avoid unnecessary adjectives.
+
+Do not make the story sound like a school textbook.
+
+============================================================
+LANGUAGE
+============================================================
+
+Use simple, natural American English.
+
+Short sentences.
+
+Natural spoken language.
+
+No complicated academic vocabulary unless absolutely necessary.
+
+Write for listening, not reading.
+
+The narration must sound natural when spoken by a female AI voice.
+
+Do not use emojis.
+
+Do not use stage directions.
+
+Do not use:
+
+[dramatic pause]
+[show image]
+[music]
+(camera zooms)
+
+Only write the words that should be spoken.
+
+============================================================
+LENGTH
+============================================================
+
+Target approximately 75-105 words.
+
+The final spoken script should normally fit a YouTube Short of roughly
+30-45 seconds depending on narration speed.
+
+Do not make it unnecessarily long.
+
+============================================================
+ORIGINALITY
+============================================================
+
+Every video must feel different.
+
+Do not repeatedly use:
+
+"The reason is..."
+"But here's the crazy part..."
+"Believe it or not..."
+"You won't believe..."
+"Here's the twist..."
+
+These phrases may occasionally appear naturally, but do not make them
+a template.
+
+Vary sentence structure and storytelling style.
+
+============================================================
+VISUAL THINKING
+============================================================
+
+Write stories that naturally allow stock footage or photographs.
+
+Prefer stories where visuals can change frequently.
+
+Examples:
+
+- locations
+- buildings
+- roads
+- cities
+- maps
+- old photographs
+- machines
+- people
+- landscapes
+- signs
+- documents
+- historical scenes
+
+Do NOT write visual instructions inside the script.
+
+============================================================
+ENDING
+============================================================
+
+The final line should encourage a natural comment.
+
+Examples of the TYPE of ending:
+
+"Would you have gone inside?"
+
+"Would you still visit this place?"
+
+"Would you have believed the story?"
+
+"What would you have done?"
+
+Do not use the exact examples repeatedly.
+
+============================================================
+TITLE
+============================================================
+
+After the script, create ONE curiosity-driven YouTube Shorts title.
+
+The title should:
+
+- be short
+- create curiosity
+- accurately represent the story
+- avoid fake clickbait
+- avoid excessive punctuation
+
+Do not put hashtags in the title.
+
+============================================================
+HASHTAGS
+============================================================
+
+Create 5-8 relevant hashtags.
+
+Always include:
+
+#USA
+#Shorts
+
+The remaining hashtags must relate to the actual story.
+
+============================================================
+OUTPUT FORMAT
+============================================================
+
+Return EXACTLY this format:
+
+SCRIPT:
+[spoken narration]
+
+TITLE:
+[title]
+
+HASHTAGS:
+[hashtags separated by spaces]
+
+Do not add anything else.
+"""
 
 
-# ==========================================================
-# FORBIDDEN WORDS
-# ==========================================================
-
-FORBIDDEN = [
-    "voice over",
-    "voice-over",
-    "voiceover",
-    "narration",
-    "narrator",
-    "production",
-    "on screen",
-    "visual",
-    "caption",
-    "subtitle",
-    "scene:",
-    "script:",
-]
-
-
-# ==========================================================
-# CLEAN TEXT
-# ==========================================================
+# ============================================================
+# CLEAN RESPONSE
+# ============================================================
 
 def clean_text(text):
+    text = text.strip()
 
-    if not text:
-        return ""
+    # Remove markdown code fences
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
-    for phrase in FORBIDDEN:
-        text = re.sub(
-            re.escape(phrase),
-            "",
-            text,
-            flags=re.IGNORECASE
-        )
-
-    text = re.sub(r"\s+", " ", text)
+    # Remove accidental leading/trailing quotes
+    text = text.strip().strip('"').strip("'")
 
     return text.strip()
 
 
-# ==========================================================
-# EXTRACT SECTION
-# ==========================================================
+# ============================================================
+# PARSE AI RESPONSE
+# ============================================================
 
-def extract_section(text, name):
+def parse_response(text):
 
-    pattern = (
-        rf"^\s*{re.escape(name)}\s*:\s*(.*?)"
-        rf"(?=^\s*[A-Z][A-Z _-]*\s*:|\Z)"
-    )
+    text = clean_text(text)
 
-    match = re.search(
-        pattern,
+    script_match = re.search(
+        r"SCRIPT:\s*(.*?)(?=\n\s*TITLE:)",
         text,
-        flags=re.IGNORECASE | re.MULTILINE | re.DOTALL
+        flags=re.DOTALL | re.IGNORECASE
     )
 
-    if match:
-        return match.group(1).strip()
-
-    return ""
-
-
-# ==========================================================
-# HASHTAGS
-# ==========================================================
-
-def extract_hashtags(text):
-
-    tags = re.findall(
-        r"#[A-Za-z0-9_]+",
-        text or ""
+    title_match = re.search(
+        r"TITLE:\s*(.*?)(?=\n\s*HASHTAGS:)",
+        text,
+        flags=re.DOTALL | re.IGNORECASE
     )
 
-    unique = []
-    seen = set()
-
-    for tag in tags:
-
-        key = tag.lower()
-
-        if key not in seen:
-            seen.add(key)
-            unique.append(tag)
-
-    return unique
-
-
-# ==========================================================
-# GEMINI REQUEST WITH RETRY
-# ==========================================================
-
-def gemini_generate(prompt, attempts=4):
-
-    last_error = None
-
-    for attempt in range(1, attempts + 1):
-
-        try:
-
-            print(
-                f"Gemini request attempt {attempt}/{attempts}..."
-            )
-
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt
-            )
-
-            text = getattr(response, "text", None)
-
-            if not text:
-                raise RuntimeError(
-                    "Gemini returned an empty response."
-                )
-
-            return text.strip()
-
-        except Exception as e:
-
-            last_error = e
-
-            print("")
-            print(
-                f"Gemini attempt {attempt} failed:"
-            )
-            print(e)
-
-            if attempt < attempts:
-
-                wait_time = attempt * 5
-
-                print(
-                    f"Retrying in {wait_time} seconds..."
-                )
-
-                time.sleep(wait_time)
-
-    raise RuntimeError(
-        f"Gemini failed after {attempts} attempts: {last_error}"
+    hashtags_match = re.search(
+        r"HASHTAGS:\s*(.*)$",
+        text,
+        flags=re.DOTALL | re.IGNORECASE
     )
 
+    if not script_match:
+        raise ValueError("Could not find SCRIPT section.")
 
-# ==========================================================
-# GENERATE CONTENT
-# ==========================================================
+    if not title_match:
+        raise ValueError("Could not find TITLE section.")
+
+    if not hashtags_match:
+        raise ValueError("Could not find HASHTAGS section.")
+
+    script = clean_text(script_match.group(1))
+    title = clean_text(title_match.group(1))
+    hashtags = clean_text(hashtags_match.group(1))
+
+    return script, title, hashtags
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+def validate_script(script, title, hashtags):
+
+    words = len(script.split())
+
+    print(f"Generated script words: {words}")
+
+    if words < 55:
+        print("WARNING: Script is shorter than expected.")
+
+    if words > 125:
+        print("WARNING: Script is longer than expected.")
+
+    if len(title) < 5:
+        raise ValueError("Generated title is too short.")
+
+    if "#USA" not in hashtags:
+        hashtags += " #USA"
+
+    if "#Shorts" not in hashtags:
+        hashtags += " #Shorts"
+
+    return script, title, hashtags
+
+
+# ============================================================
+# GENERATE
+# ============================================================
 
 def generate_content():
 
-    prompt = """
-You are the writer for a YouTube Shorts channel called USA Dose.
+    print("========================================")
+    print("USA DOSE SMART SCRIPT GENERATOR")
+    print("========================================")
+    print(f"Model: {MODEL}")
+    print(f"Date: {datetime.utcnow().strftime('%Y-%m-%d')}")
+    print("Generating original factual Short...")
+    print()
 
-Create ONE completely original and factual short video about the United States.
-
-Choose an interesting topic from areas such as:
-
-- unusual American history
-- strange American places
-- surprising US geography
-- forgotten events
-- unusual inventions
-- American landmarks
-- fascinating science in the US
-- unusual laws or traditions
-- surprising facts about American cities
-- hidden stories from the United States
-
-IMPORTANT:
-
-The topic should feel fresh and different from generic repeated facts.
-
-The first sentence MUST create curiosity immediately.
-
-The viewer should want to keep watching to discover the answer.
-
-SCRIPT RULES:
-
-- Exactly 40 to 55 spoken words.
-- Never exceed 55 words.
-- Under 350 characters.
-- Aim for approximately 45-50 words.
-- Natural American English.
-- Strong curiosity hook in the first sentence.
-- No introduction.
-- No "Welcome to USA Dose".
-- No "Did you know" unless genuinely necessary.
-- Informative and entertaining.
-- Suitable for approximately 18-25 seconds.
-- Spoken narration only.
-- Every word must be something the female voice can speak naturally.
-- Do not include production instructions.
-- Do not include labels inside SCRIPT.
-- Do not include scene directions.
-- Do not include visual directions.
-
-NEVER put these inside SCRIPT:
-
-voice over
-voice-over
-voiceover
-narration
-narrator
-production
-scene
-on screen
-visual
-caption
-subtitle
-script
-
-TITLE RULES:
-
-- Create one unique title.
-- Title must match the actual topic.
-- Make it curiosity-driven.
-- Do not make false claims.
-- Do not repeat generic titles.
-
-HASHTAG RULES:
-
-- Generate 7 to 10 hashtags.
-- Include #Shorts.
-- Hashtags must match the actual topic.
-- Do not use the exact same hashtag list every day.
-
-OUTPUT EXACTLY:
-
-TITLE: <unique title>
-
-HASHTAGS: <7-10 relevant hashtags>
-
-SCRIPT:
-<40-55 spoken words, under 350 characters>
-"""
-
-    return gemini_generate(prompt)
-
-
-# ==========================================================
-# SHORTEN SCRIPT
-# ==========================================================
-
-def shorten_script(script):
-
-    prompt = f"""
-Rewrite this USA Dose YouTube Shorts narration.
-
-Keep the SAME factual topic and important fact.
-
-STRICT RULES:
-
-- 40 to 55 words.
-- Never exceed 55 words.
-- Under 350 characters.
-- Aim for 45-50 words.
-- Natural American English.
-- Strong hook.
-- Spoken narration only.
-- No title.
-- No hashtags.
-- No labels.
-- No production instructions.
-- Do not add new facts.
-- Do not change the factual meaning.
-
-Return ONLY the final spoken narration.
-
-SCRIPT:
-
-{script}
-"""
-
-    return clean_text(
-        gemini_generate(prompt)
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=PROMPT
     )
 
+    if not response or not response.text:
+        raise ValueError("Gemini returned an empty response.")
 
-# ==========================================================
-# VALIDATE SCRIPT
-# ==========================================================
+    raw_text = response.text.strip()
 
-def validate_script(script):
+    print("Gemini response received.")
+    print()
 
-    script = clean_text(script)
+    script, title, hashtags = parse_response(raw_text)
 
-    word_count = len(script.split())
-    character_count = len(script)
+    script, title, hashtags = validate_script(
+        script,
+        title,
+        hashtags
+    )
 
-    if word_count < MIN_WORDS:
-        return False, word_count, character_count
-
-    if word_count > MAX_WORDS:
-        return False, word_count, character_count
-
-    if character_count > MAX_CHARACTERS:
-        return False, word_count, character_count
-
-    lower_script = script.lower()
-
-    for phrase in FORBIDDEN:
-
-        if phrase in lower_script:
-            return False, word_count, character_count
-
-    return True, word_count, character_count
+    return script, title, hashtags
 
 
-# ==========================================================
+# ============================================================
+# SAVE FILES
+# ============================================================
+
+def save_files(script, title, hashtags):
+
+    with open(SCRIPT_FILE, "w", encoding="utf-8") as f:
+        f.write(script)
+
+    with open(TITLE_FILE, "w", encoding="utf-8") as f:
+        f.write(title)
+
+    with open(HASHTAGS_FILE, "w", encoding="utf-8") as f:
+        f.write(hashtags)
+
+    print()
+    print("========================================")
+    print("FILES CREATED SUCCESSFULLY")
+    print("========================================")
+    print(f"✓ {SCRIPT_FILE}")
+    print(f"✓ {TITLE_FILE}")
+    print(f"✓ {HASHTAGS_FILE}")
+    print()
+    print("TITLE:")
+    print(title)
+    print()
+    print("HASHTAGS:")
+    print(hashtags)
+    print()
+    print("SCRIPT:")
+    print(script)
+    print()
+
+
+# ============================================================
 # MAIN
-# ==========================================================
+# ============================================================
 
 def main():
 
-    print("================================")
-    print("USA DOSE SCRIPT GENERATOR")
-    print("================================")
-    print(f"Model: {MODEL}")
-    print("Target: 40-55 words")
-    print("Character limit: 350")
-    print("Strong hook: ACTIVE")
-    print("Retry protection: ACTIVE")
-    print("================================")
-
-    # ------------------------------------------------------
-    # GENERATE CONTENT
-    # ------------------------------------------------------
-
     try:
 
-        result = generate_content()
+        script, title, hashtags = generate_content()
+
+        save_files(
+            script,
+            title,
+            hashtags
+        )
+
+        print("USA Dose script generation completed successfully.")
 
     except Exception as e:
 
-        print("")
-        print("================================")
-        print("GEMINI ERROR")
-        print("================================")
-        print(e)
-        print("================================")
+        print()
+        print("========================================")
+        print("SCRIPT GENERATION FAILED")
+        print("========================================")
+        print(str(e))
+        print()
 
         sys.exit(1)
-
-    # ------------------------------------------------------
-    # EXTRACT
-    # ------------------------------------------------------
-
-    title = extract_section(
-        result,
-        "TITLE"
-    )
-
-    hashtags_raw = extract_section(
-        result,
-        "HASHTAGS"
-    )
-
-    script = extract_section(
-        result,
-        "SCRIPT"
-    )
-
-    title = clean_text(title)
-    script = clean_text(script)
-
-    hashtags = extract_hashtags(
-        hashtags_raw
-    )
-
-    # ------------------------------------------------------
-    # BASIC CHECK
-    # ------------------------------------------------------
-
-    if not title:
-
-        print("ERROR: Title was not generated.")
-        sys.exit(1)
-
-    if not script:
-
-        print("ERROR: Script was not generated.")
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # AUTOMATIC SCRIPT VALIDATION
-    # ------------------------------------------------------
-
-    valid = False
-
-    for attempt in range(1, 4):
-
-        valid, word_count, character_count = validate_script(
-            script
-        )
-
-        print("")
-        print("================================")
-        print(
-            f"SCRIPT VALIDATION {attempt}/3"
-        )
-        print("================================")
-        print(f"Words: {word_count}")
-        print(f"Characters: {character_count}")
-        print("================================")
-
-        if valid:
-
-            print("")
-            print("SCRIPT VALIDATION: PASSED")
-            break
-
-        if attempt < 3:
-
-            print("")
-            print("Script is outside safe limits.")
-            print("Automatically rewriting...")
-
-            try:
-
-                script = shorten_script(
-                    script
-                )
-
-            except Exception as e:
-
-                print("")
-                print(
-                    "ERROR while rewriting script:"
-                )
-                print(e)
-
-                sys.exit(1)
-
-    # ------------------------------------------------------
-    # FINAL VALIDATION
-    # ------------------------------------------------------
-
-    valid, word_count, character_count = validate_script(
-        script
-    )
-
-    if not valid:
-
-        print("")
-        print("================================")
-        print("SCRIPT VALIDATION FAILED")
-        print("================================")
-        print(
-            f"Words: {word_count}"
-        )
-        print(
-            f"Characters: {character_count}"
-        )
-        print("")
-        print(
-            "Video generation will NOT continue."
-        )
-
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # HASHTAG SAFETY
-    # ------------------------------------------------------
-
-    if "#shorts" not in [
-        tag.lower()
-        for tag in hashtags
-    ]:
-
-        hashtags.append(
-            "#Shorts"
-        )
-
-    # Remove duplicates again
-    final_hashtags = []
-    seen = set()
-
-    for tag in hashtags:
-
-        key = tag.lower()
-
-        if key not in seen:
-
-            seen.add(key)
-            final_hashtags.append(tag)
-
-    hashtags = final_hashtags
-
-    if len(hashtags) < 7:
-
-        print("")
-        print(
-            "ERROR: Fewer than 7 hashtags generated."
-        )
-        print(
-            f"Hashtags found: {len(hashtags)}"
-        )
-
-        sys.exit(1)
-
-    # ------------------------------------------------------
-    # SAVE SCRIPT
-    # ------------------------------------------------------
-
-    with open(
-        SCRIPT_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(script)
-
-    # ------------------------------------------------------
-    # SAVE TITLE
-    # ------------------------------------------------------
-
-    with open(
-        TITLE_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(title)
-
-    # ------------------------------------------------------
-    # SAVE HASHTAGS
-    # ------------------------------------------------------
-
-    with open(
-        HASHTAGS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        f.write(
-            " ".join(hashtags)
-        )
-
-    # ------------------------------------------------------
-    # FINAL OUTPUT
-    # ------------------------------------------------------
-
-    print("")
-    print("================================")
-    print("USA DOSE CONTENT READY")
-    print("================================")
-
-    print("")
-    print("TITLE:")
-    print(title)
-
-    print("")
-    print("HASHTAGS:")
-    print(" ".join(hashtags))
-
-    print("")
-    print("SCRIPT:")
-    print(script)
-
-    print("")
-    print("================================")
-    print("FINAL CHECK")
-    print("================================")
-    print(f"Words: {word_count}")
-    print(f"Characters: {character_count}")
-    print(f"Hashtags: {len(hashtags)}")
-    print("Hook: ACTIVE")
-    print("Voice safety: PASSED")
-    print("================================")
 
 
 if __name__ == "__main__":
