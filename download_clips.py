@@ -1,173 +1,461 @@
 import os
-import sys
 import re
-import random
+import sys
 import time
 import requests
+from urllib.parse import quote
 
+# ============================================================
+# USA DOSE - SMART TOPIC BASED PEXELS CLIP DOWNLOADER
+# ============================================================
 
-# ==========================================================
-# USA DOSE - SMART PEXELS CLIP DOWNLOADER
-# ==========================================================
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
-OUTPUT_DIR = "clips"
+if not PEXELS_API_KEY:
+    print("ERROR: PEXELS_API_KEY is missing.")
+    sys.exit(1)
+
 SCRIPT_FILE = "daily_script.txt"
+CLIPS_DIR = "clips"
 
-PEXELS_API_URL = "https://api.pexels.com/videos/search"
+PEXELS_URL = "https://api.pexels.com/v1/videos/search"
 
-MAX_CLIPS = 6
+HEADERS = {
+    "Authorization": PEXELS_API_KEY
+}
+
+# Number of clips to download
+TARGET_CLIPS = 5
+
+# Minimum clips required for video creation
 MIN_CLIPS = 3
 
-REQUEST_TIMEOUT = 30
-DOWNLOAD_TIMEOUT = 90
+# Pexels settings
+PER_PAGE = 15
+VIDEO_ORIENTATION = "portrait"
 
 
-# ==========================================================
-# HELPERS
-# ==========================================================
-
-def clean_query(text):
-
-    text = re.sub(
-        r"[^a-zA-Z0-9\s]",
-        " ",
-        text
-    )
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    words = text.strip().split()
-
-    # Keep search query reasonably short.
-    words = words[:8]
-
-    return " ".join(words)
-
+# ============================================================
+# READ DAILY SCRIPT
+# ============================================================
 
 def read_script():
 
-    if not os.path.isfile(SCRIPT_FILE):
-
-        print("")
-        print("ERROR: daily_script.txt not found.")
-        print("")
+    if not os.path.exists(SCRIPT_FILE):
+        print(f"ERROR: {SCRIPT_FILE} not found.")
         sys.exit(1)
 
-    with open(
-        SCRIPT_FILE,
-        "r",
-        encoding="utf-8"
-    ) as file:
+    with open(SCRIPT_FILE, "r", encoding="utf-8") as f:
+        script = f.read().strip()
 
-        text = file.read().strip()
-
-    if not text:
-
-        print("")
+    if not script:
         print("ERROR: daily_script.txt is empty.")
-        print("")
         sys.exit(1)
 
-    return text
+    print()
+    print("========================================")
+    print("TODAY'S SCRIPT")
+    print("========================================")
+    print(script)
+    print()
+
+    return script
 
 
-def build_queries(script):
+# ============================================================
+# CLEAN TEXT
+# ============================================================
 
-    # Extract useful words from the daily script.
-    words = re.findall(
-        r"[A-Za-z]{4,}",
-        script.lower()
-    )
+def clean_text(text):
 
-    stopwords = {
-        "about",
-        "after",
-        "again",
-        "also",
-        "because",
-        "being",
-        "could",
-        "daily",
-        "every",
-        "from",
-        "have",
-        "into",
-        "just",
-        "more",
-        "most",
-        "only",
-        "over",
-        "said",
-        "some",
-        "that",
-        "than",
-        "their",
-        "there",
-        "these",
-        "they",
-        "this",
-        "those",
-        "through",
-        "today",
-        "very",
-        "what",
-        "when",
-        "where",
-        "which",
-        "while",
-        "with",
-        "would",
-        "your",
-        "news",
-    }
+    text = text.lower()
 
-    useful = []
+    # Remove URLs
+    text = re.sub(r"https?://\S+", " ", text)
+
+    # Remove punctuation
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+
+    # Remove extra spaces
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+# ============================================================
+# STOP WORDS
+# ============================================================
+
+STOP_WORDS = {
+    "about",
+    "after",
+    "again",
+    "almost",
+    "also",
+    "because",
+    "being",
+    "before",
+    "between",
+    "could",
+    "every",
+    "from",
+    "going",
+    "have",
+    "into",
+    "just",
+    "like",
+    "more",
+    "most",
+    "never",
+    "only",
+    "other",
+    "over",
+    "people",
+    "really",
+    "some",
+    "than",
+    "that",
+    "their",
+    "them",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "very",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "will",
+    "with",
+    "would",
+    "your",
+    "you",
+    "once",
+    "still",
+    "story",
+    "thing",
+    "things",
+    "today",
+    "american",
+    "america",
+    "united",
+    "states",
+    "usa",
+}
+
+
+# ============================================================
+# TOPIC KEYWORD EXTRACTION
+# ============================================================
+
+def extract_keywords(script):
+
+    cleaned = clean_text(script)
+
+    words = cleaned.split()
+
+    # Count words
+    frequency = {}
 
     for word in words:
 
-        if word in stopwords:
+        if len(word) < 4:
             continue
 
-        if word not in useful:
-            useful.append(word)
+        if word in STOP_WORDS:
+            continue
+
+        frequency[word] = frequency.get(word, 0) + 1
+
+    # Sort by frequency
+    sorted_words = sorted(
+        frequency.items(),
+        key=lambda x: (-x[1], -len(x[0]))
+    )
+
+    keywords = []
+
+    for word, count in sorted_words:
+
+        if word not in keywords:
+            keywords.append(word)
+
+        if len(keywords) >= 8:
+            break
+
+    print("Extracted keywords:")
+    print(", ".join(keywords))
+    print()
+
+    return keywords
+
+
+# ============================================================
+# TOPIC TYPE DETECTION
+# ============================================================
+
+def detect_topic_type(script):
+
+    text = clean_text(script)
+
+    topic_types = []
+
+    categories = {
+
+        "city": [
+            "city",
+            "town",
+            "village",
+            "population",
+            "downtown",
+            "street",
+            "neighborhood"
+        ],
+
+        "history": [
+            "history",
+            "historical",
+            "century",
+            "war",
+            "president",
+            "ancient",
+            "historic",
+            "founded"
+        ],
+
+        "building": [
+            "building",
+            "house",
+            "hotel",
+            "tower",
+            "bridge",
+            "prison",
+            "school",
+            "church",
+            "museum"
+        ],
+
+        "disaster": [
+            "disaster",
+            "fire",
+            "flood",
+            "storm",
+            "hurricane",
+            "earthquake",
+            "explosion",
+            "crash",
+            "accident"
+        ],
+
+        "technology": [
+            "technology",
+            "computer",
+            "internet",
+            "machine",
+            "invention",
+            "invention",
+            "robot",
+            "engineering",
+            "software"
+        ],
+
+        "business": [
+            "business",
+            "company",
+            "money",
+            "market",
+            "store",
+            "factory",
+            "industry",
+            "corporation"
+        ],
+
+        "road": [
+            "road",
+            "highway",
+            "traffic",
+            "car",
+            "truck",
+            "route",
+            "driving"
+        ],
+
+        "nature": [
+            "mountain",
+            "forest",
+            "desert",
+            "river",
+            "lake",
+            "ocean",
+            "waterfall",
+            "canyon"
+        ],
+
+        "people": [
+            "man",
+            "woman",
+            "person",
+            "people",
+            "family",
+            "worker",
+            "soldier",
+            "president"
+        ]
+    }
+
+    for category, words in categories.items():
+
+        for word in words:
+
+            if word in text:
+                topic_types.append(category)
+                break
+
+    # Default
+    if not topic_types:
+        topic_types.append("general")
+
+    print("Detected topic type:")
+    print(", ".join(topic_types))
+    print()
+
+    return topic_types
+
+
+# ============================================================
+# BUILD SEARCH QUERIES
+# ============================================================
+
+def build_queries(script, keywords, topic_types):
 
     queries = []
 
-    # Most relevant query first.
-    if useful:
+    # --------------------------------------------------------
+    # Main keyword combinations
+    # --------------------------------------------------------
+
+    if len(keywords) >= 2:
 
         queries.append(
-            clean_query(
-                " ".join(useful[:5])
-            )
+            f"{keywords[0]} {keywords[1]} USA"
         )
 
-    if len(useful) >= 2:
+    if len(keywords) >= 3:
 
         queries.append(
-            clean_query(
-                " ".join(useful[:3])
-            )
+            f"{keywords[0]} {keywords[1]} {keywords[2]}"
         )
 
-    # USA-oriented fallbacks.
+    # --------------------------------------------------------
+    # Topic-specific searches
+    # --------------------------------------------------------
+
+    for topic in topic_types:
+
+        if keywords:
+
+            queries.append(
+                f"{keywords[0]} {topic} USA"
+            )
+
+        if len(keywords) >= 2:
+
+            queries.append(
+                f"{keywords[1]} {topic} USA"
+            )
+
+    # --------------------------------------------------------
+    # Strong generic fallback based on topic
+    # --------------------------------------------------------
+
+    if "city" in topic_types:
+
+        queries.extend([
+            "American city skyline",
+            "American small town",
+            "USA downtown street"
+        ])
+
+    if "history" in topic_types:
+
+        queries.extend([
+            "American history",
+            "historic America",
+            "old American town"
+        ])
+
+    if "building" in topic_types:
+
+        queries.extend([
+            "historic American building",
+            "old building America",
+            "American architecture"
+        ])
+
+    if "disaster" in topic_types:
+
+        queries.extend([
+            "storm USA",
+            "flood America",
+            "disaster aftermath"
+        ])
+
+    if "technology" in topic_types:
+
+        queries.extend([
+            "American technology",
+            "modern technology",
+            "technology machine"
+        ])
+
+    if "business" in topic_types:
+
+        queries.extend([
+            "American business",
+            "American factory",
+            "American shopping"
+        ])
+
+    if "road" in topic_types:
+
+        queries.extend([
+            "American highway",
+            "USA road driving",
+            "American traffic"
+        ])
+
+    if "nature" in topic_types:
+
+        queries.extend([
+            "American landscape",
+            "USA mountains",
+            "American nature"
+        ])
+
+    if "people" in topic_types:
+
+        queries.extend([
+            "American people",
+            "American workers",
+            "people USA"
+        ])
+
+    # --------------------------------------------------------
+    # General fallback
+    # --------------------------------------------------------
+
     queries.extend([
-        "United States America",
         "USA city",
-        "American people",
-        "United States business",
-        "American technology",
-        "New York USA",
-        "Washington DC USA",
-        "Los Angeles USA",
-        "Chicago USA",
+        "United States",
+        "American landscape"
     ])
 
-    # Remove duplicates.
+    # Remove duplicates
     final_queries = []
 
     for query in queries:
@@ -178,545 +466,402 @@ def build_queries(script):
             continue
 
         if query.lower() not in [
-            q.lower()
-            for q in final_queries
+            q.lower() for q in final_queries
         ]:
+            final_queries.append(query)
 
-            final_queries.append(
-                query
-            )
+    print("Pexels search queries:")
+    for q in final_queries:
+        print(" -", q)
+
+    print()
 
     return final_queries
 
 
-def clear_old_clips():
+# ============================================================
+# SEARCH PEXELS
+# ============================================================
 
-    os.makedirs(
-        OUTPUT_DIR,
-        exist_ok=True
-    )
-
-    removed = 0
-
-    for filename in os.listdir(
-        OUTPUT_DIR
-    ):
-
-        path = os.path.join(
-            OUTPUT_DIR,
-            filename
-        )
-
-        if not os.path.isfile(path):
-            continue
-
-        if filename.lower().endswith(
-            (
-                ".mp4",
-                ".mov",
-                ".mkv",
-                ".webm"
-            )
-        ):
-
-            try:
-
-                os.remove(path)
-
-                removed += 1
-
-            except Exception as error:
-
-                print(
-                    "Could not remove:",
-                    path,
-                    error
-                )
-
-    print(
-        f"Old clips removed: {removed}"
-    )
-
-
-def get_video_file(video):
-
-    files = video.get(
-        "video_files",
-        []
-    )
-
-    if not files:
-        return None
-
-    portrait = []
-    usable = []
-
-    for item in files:
-
-        link = item.get("link")
-
-        width = item.get(
-            "width"
-        ) or 0
-
-        height = item.get(
-            "height"
-        ) or 0
-
-        if not link:
-            continue
-
-        # Ignore extremely small files.
-        if width < 480 or height < 480:
-            continue
-
-        usable.append(item)
-
-        if height >= width:
-            portrait.append(item)
-
-    candidates = (
-        portrait
-        if portrait
-        else usable
-    )
-
-    if not candidates:
-        return None
-
-    # Prefer a good HD-ish file without
-    # downloading huge 4K files.
-    def score(item):
-
-        width = item.get(
-            "width"
-        ) or 0
-
-        height = item.get(
-            "height"
-        ) or 0
-
-        area = width * height
-
-        # Prefer 720p-1080p range.
-        if height >= 1080:
-            penalty = abs(
-                height - 1080
-            )
-        else:
-            penalty = abs(
-                height - 720
-            )
-
-        return (
-            penalty,
-            area
-        )
-
-    candidates.sort(
-        key=score
-    )
-
-    return candidates[0]
-
-
-def search_pexels(
-    session,
-    api_key,
-    query
-):
-
-    print("")
-    print("--------------------------------")
-    print(
-        f"Searching Pexels: {query}"
-    )
-    print("--------------------------------")
-
-    headers = {
-        "Authorization": api_key
-    }
+def search_pexels(query):
 
     params = {
         "query": query,
-        "orientation": "portrait",
+        "orientation": VIDEO_ORIENTATION,
         "size": "medium",
-        "per_page": 15,
+        "per_page": PER_PAGE
     }
 
     try:
 
-        response = session.get(
-            PEXELS_API_URL,
-            headers=headers,
+        response = requests.get(
+            PEXELS_URL,
+            headers=HEADERS,
             params=params,
-            timeout=REQUEST_TIMEOUT
-        )
-
-    except Exception as error:
-
-        print(
-            "Pexels request error:",
-            error
-        )
-
-        return []
-
-    if response.status_code != 200:
-
-        print(
-            "Pexels HTTP error:",
-            response.status_code
-        )
-
-        print(
-            response.text[:500]
-        )
-
-        return []
-
-    try:
-
-        data = response.json()
-
-    except Exception:
-
-        print(
-            "ERROR: Invalid Pexels response."
-        )
-
-        return []
-
-    videos = data.get(
-        "videos",
-        []
-    )
-
-    if not videos:
-
-        print(
-            "No videos found."
-        )
-
-        return []
-
-    random.shuffle(
-        videos
-    )
-
-    return videos
-
-
-def download_video(
-    session,
-    url,
-    filename
-):
-
-    temporary = (
-        filename
-        + ".part"
-    )
-
-    try:
-
-        print(
-            "Downloading:",
-            filename
-        )
-
-        response = session.get(
-            url,
-            stream=True,
-            timeout=DOWNLOAD_TIMEOUT
+            timeout=30
         )
 
         if response.status_code != 200:
 
             print(
-                "Download failed:",
-                response.status_code
+                f"Pexels error {response.status_code} "
+                f"for query: {query}"
+            )
+
+            return []
+
+        data = response.json()
+
+        return data.get("videos", [])
+
+    except requests.RequestException as e:
+
+        print(f"Pexels request failed: {e}")
+
+        return []
+
+
+# ============================================================
+# CHOOSE VIDEO FILE
+# ============================================================
+
+def choose_video_file(video):
+
+    files = video.get("video_files", [])
+
+    if not files:
+        return None
+
+    candidates = []
+
+    for file in files:
+
+        width = file.get("width") or 0
+        height = file.get("height") or 0
+        link = file.get("link")
+
+        if not link:
+            continue
+
+        # Prefer portrait
+        portrait = height > width
+
+        # Prefer reasonable resolution
+        if height >= 1000:
+            quality_score = 3
+        elif height >= 700:
+            quality_score = 2
+        else:
+            quality_score = 1
+
+        score = (
+            100 if portrait else 0
+        ) + quality_score
+
+        candidates.append(
+            (score, height, link)
+        )
+
+    if not candidates:
+        return None
+
+    candidates.sort(
+        key=lambda x: (x[0], x[1]),
+        reverse=True
+    )
+
+    return candidates[0][2]
+
+
+# ============================================================
+# DOWNLOAD FILE
+# ============================================================
+
+def download_file(url, output_path):
+
+    try:
+
+        response = requests.get(
+            url,
+            stream=True,
+            timeout=60
+        )
+
+        if response.status_code != 200:
+
+            print(
+                f"Download failed: HTTP "
+                f"{response.status_code}"
             )
 
             return False
 
-        with open(
-            temporary,
-            "wb"
-        ) as file:
+        with open(output_path, "wb") as f:
 
             for chunk in response.iter_content(
-                chunk_size=1024 * 1024
+                chunk_size=1024 * 256
             ):
 
                 if chunk:
+                    f.write(chunk)
 
-                    file.write(
-                        chunk
-                    )
+        # Check file size
+        size = os.path.getsize(output_path)
 
-        if not os.path.isfile(
-            temporary
-        ):
-
-            return False
-
-        size = os.path.getsize(
-            temporary
-        )
-
-        # Reject broken/tiny files.
-        if size < 50_000:
+        if size < 10000:
 
             print(
-                "Downloaded file is too small."
+                f"Downloaded file is too small: "
+                f"{size} bytes"
             )
 
-            try:
-                os.remove(
-                    temporary
-                )
-            except Exception:
-                pass
+            os.remove(output_path)
 
             return False
-
-        os.replace(
-            temporary,
-            filename
-        )
-
-        print(
-            "Download successful:",
-            f"{size:,} bytes"
-        )
 
         return True
 
-    except Exception as error:
+    except requests.RequestException as e:
 
-        print(
-            "Download error:",
-            error
-        )
+        print(f"Download error: {e}")
 
-        try:
-
-            if os.path.isfile(
-                temporary
-            ):
-
-                os.remove(
-                    temporary
-                )
-
-        except Exception:
-            pass
+        if os.path.exists(output_path):
+            os.remove(output_path)
 
         return False
 
 
-# ==========================================================
-# MAIN
-# ==========================================================
+# ============================================================
+# CLEAR OLD CLIPS
+# ============================================================
 
-def main():
+def clear_old_clips():
 
-    print("")
-    print("================================")
-    print("USA DOSE SMART CLIP DOWNLOADER")
-    print("================================")
+    os.makedirs(CLIPS_DIR, exist_ok=True)
 
-    api_key = os.getenv(
-        "PEXELS_API_KEY"
-    )
+    removed = 0
 
-    if not api_key:
-
-        print("")
-        print(
-            "ERROR: PEXELS_API_KEY is missing."
-        )
-        print("")
-        print(
-            "Add PEXELS_API_KEY in:"
-        )
-        print(
-            "GitHub → Settings → Secrets and variables"
-        )
-        print(
-            "→ Actions"
-        )
-        print("")
-
-        sys.exit(1)
-
-    script = read_script()
-
-    print("")
-    print("Daily script:")
-    print("--------------------------------")
-    print(script)
-    print("--------------------------------")
-
-    clear_old_clips()
-
-    queries = build_queries(
-        script
-    )
-
-    print("")
-    print("Search queries:")
-    print("--------------------------------")
-
-    for query in queries:
-
-        print(
-            "-",
-            query
-        )
-
-    print("--------------------------------")
-
-    session = requests.Session()
-
-    downloaded = 0
-
-    used_video_ids = set()
-
-    for query in queries:
-
-        if downloaded >= MAX_CLIPS:
-            break
-
-        videos = search_pexels(
-            session,
-            api_key,
-            query
-        )
-
-        for video in videos:
-
-            if downloaded >= MAX_CLIPS:
-                break
-
-            video_id = video.get(
-                "id"
-            )
-
-            if video_id in used_video_ids:
-                continue
-
-            selected = get_video_file(
-                video
-            )
-
-            if not selected:
-                continue
-
-            url = selected.get(
-                "link"
-            )
-
-            if not url:
-                continue
-
-            used_video_ids.add(
-                video_id
-            )
-
-            filename = os.path.join(
-                OUTPUT_DIR,
-                f"clip_{downloaded + 1}.mp4"
-            )
-
-            success = download_video(
-                session,
-                url,
-                filename
-            )
-
-            if success:
-
-                downloaded += 1
-
-                print(
-                    f"Usable clips: "
-                    f"{downloaded}/{MAX_CLIPS}"
-                )
-
-        # Small delay between searches.
-        time.sleep(1)
-
-    print("")
-    print("================================")
-    print("CLIP DOWNLOAD COMPLETE")
-    print("================================")
-    print(
-        f"Usable clips: {downloaded}"
-    )
-    print(
-        f"Required minimum: {MIN_CLIPS}"
-    )
-    print("================================")
-
-    if downloaded < MIN_CLIPS:
-
-        print("")
-        print(
-            "ERROR: Not enough usable clips."
-        )
-
-        print(
-            "Video generation will stop safely."
-        )
-
-        print("")
-        print(
-            "Possible causes:"
-        )
-        print(
-            "1. PEXELS_API_KEY is invalid."
-        )
-        print(
-            "2. Pexels returned no suitable videos."
-        )
-        print(
-            "3. Pexels API request was blocked."
-        )
-
-        sys.exit(1)
-
-    print("")
-    print(
-        "Clips ready for create_video.py:"
-    )
-
-    for filename in sorted(
-        os.listdir(OUTPUT_DIR)
-    ):
+    for filename in os.listdir(CLIPS_DIR):
 
         path = os.path.join(
-            OUTPUT_DIR,
+            CLIPS_DIR,
             filename
         )
 
         if os.path.isfile(path):
 
-            print(
-                " -",
-                path
+            try:
+
+                os.remove(path)
+                removed += 1
+
+            except OSError as e:
+
+                print(
+                    f"Could not remove {filename}: {e}"
+                )
+
+    print(
+        f"Removed {removed} old clips."
+    )
+
+    print()
+
+
+# ============================================================
+# DOWNLOAD SMART CLIPS
+# ============================================================
+
+def download_clips(script):
+
+    keywords = extract_keywords(script)
+
+    topic_types = detect_topic_type(script)
+
+    queries = build_queries(
+        script,
+        keywords,
+        topic_types
+    )
+
+    downloaded = []
+
+    seen_ids = set()
+
+    clip_number = 1
+
+    # --------------------------------------------------------
+    # Search every query until enough clips are found
+    # --------------------------------------------------------
+
+    for query in queries:
+
+        if len(downloaded) >= TARGET_CLIPS:
+            break
+
+        print("========================================")
+        print(f"SEARCHING: {query}")
+        print("========================================")
+
+        videos = search_pexels(query)
+
+        print(
+            f"Found {len(videos)} videos."
+        )
+
+        for video in videos:
+
+            if len(downloaded) >= TARGET_CLIPS:
+                break
+
+            video_id = video.get("id")
+
+            if video_id in seen_ids:
+                continue
+
+            seen_ids.add(video_id)
+
+            video_url = choose_video_file(video)
+
+            if not video_url:
+                continue
+
+            output_file = os.path.join(
+                CLIPS_DIR,
+                f"clip_{clip_number:02d}.mp4"
             )
 
-    print("")
+            print(
+                f"Downloading clip "
+                f"{clip_number}: {query}"
+            )
+
+            success = download_file(
+                video_url,
+                output_file
+            )
+
+            if success:
+
+                downloaded.append(
+                    output_file
+                )
+
+                print(
+                    f"✓ Saved: {output_file}"
+                )
+
+                clip_number += 1
+
+            else:
+
+                print("✗ Download failed.")
+
+            print()
+
+            # Small delay to avoid hammering API
+            time.sleep(0.5)
+
+    return downloaded
+
+
+# ============================================================
+# VALIDATE CLIPS
+# ============================================================
+
+def validate_clips(downloaded):
+
+    valid_files = []
+
+    for path in downloaded:
+
+        if not os.path.exists(path):
+            continue
+
+        try:
+
+            size = os.path.getsize(path)
+
+            if size >= 10000:
+                valid_files.append(path)
+
+        except OSError:
+            continue
+
+    print()
+    print("========================================")
+    print("CLIP VALIDATION")
+    print("========================================")
     print(
-        "Clip downloader: SUCCESS"
+        f"Usable clips: "
+        f"{len(valid_files)}"
     )
+    print()
+
+    if len(valid_files) < MIN_CLIPS:
+
+        print(
+            f"ERROR: Only {len(valid_files)} "
+            f"usable clips downloaded."
+        )
+
+        print(
+            f"At least {MIN_CLIPS} clips are required."
+        )
+
+        return False
+
+    return True
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    print()
+    print("========================================")
+    print("USA DOSE SMART PEXELS DOWNLOADER")
+    print("========================================")
+    print()
+
+    script = read_script()
+
+    clear_old_clips()
+
+    downloaded = download_clips(
+        script
+    )
+
+    if not validate_clips(downloaded):
+
+        print()
+        print(
+            "Clip download failed."
+        )
+
+        sys.exit(1)
+
+    print("========================================")
+    print("CLIP DOWNLOAD SUCCESSFUL")
+    print("========================================")
+
+    for clip in downloaded:
+        print("✓", clip)
+
+    print()
     print(
-        "create_video.py can continue."
+        f"Total clips downloaded: "
+        f"{len(downloaded)}"
+    )
+
+    print()
+    print(
+        "USA Dose smart clip download "
+        "completed successfully."
     )
 
 
 if __name__ == "__main__":
-
     main()
