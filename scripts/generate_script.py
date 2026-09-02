@@ -2,13 +2,8 @@ import os
 import re
 import sys
 import time
+import requests
 from datetime import datetime
-
-from google import genai
-
-# ==========================================
-# CONFIG
-# ==========================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
@@ -16,23 +11,17 @@ if not API_KEY:
     print("ERROR: GEMINI_API_KEY is missing.", flush=True)
     sys.exit(1)
 
-client = genai.Client(api_key=API_KEY)
+MODEL = "gemini-3.7-flash"
 
-# Primary + fallback models
-MODELS = [
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-]
+API_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    + MODEL
+    + ":generateContent"
+)
 
 SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
-
-
-# ==========================================
-# PROMPT
-# ==========================================
 
 PROMPT = """
 Write ONE original USA-related YouTube Short.
@@ -41,22 +30,20 @@ Audience: adults ages 18-70.
 
 Requirements:
 - 75-105 words.
-- Strong curiosity hook in the first sentence.
+- Strong curiosity hook immediately.
 - One surprising factual USA story.
 - Build suspense.
 - Do not reveal the answer immediately.
 - Simple natural American English.
-- Fast storytelling.
-- Universal topic that can interest both younger and older adults.
-- Focus on one surprising USA fact, mystery, place, history fact,
-  invention, money fact, unusual event, law, or discovery.
-- Avoid politics.
-- Do not invent facts.
-- Do not exaggerate.
-- No emojis in narration.
-- End with a natural question encouraging comments.
+- Fast engaging storytelling.
+- Universal topic.
+- No politics.
+- No fake facts.
+- No exaggeration.
+- No emojis.
+- End with a natural question.
 
-Return ONLY this format:
+Return ONLY:
 
 SCRIPT:
 [75-105 word narration]
@@ -69,31 +56,19 @@ HASHTAGS:
 """
 
 
-# ==========================================
-# CLEAN TEXT
-# ==========================================
-
 def clean(text):
     text = text.strip()
-
     text = re.sub(
         r"```(?:text|txt)?",
         "",
         text,
         flags=re.IGNORECASE
     )
-
     text = text.replace("```", "")
-
     return text.strip()
 
 
-# ==========================================
-# PARSE RESPONSE
-# ==========================================
-
 def parse_response(text):
-
     text = clean(text)
 
     script_match = re.search(
@@ -123,40 +98,30 @@ def parse_response(text):
     if not hashtags_match:
         raise ValueError("HASHTAGS section missing.")
 
-    script = clean(script_match.group(1))
-    title = clean(title_match.group(1))
-    hashtags = clean(hashtags_match.group(1))
-
-    return script, title, hashtags
-
-
-# ==========================================
-# VALIDATE
-# ==========================================
-
-def validate(script, title, hashtags):
-
-    word_count = len(script.split())
-
-    print(
-        f"Generated script words: {word_count}",
-        flush=True
+    return (
+        clean(script_match.group(1)),
+        clean(title_match.group(1)),
+        clean(hashtags_match.group(1))
     )
 
-    if word_count < 60:
+
+def validate(script, title, hashtags):
+    words = len(script.split())
+
+    print(f"Generated words: {words}", flush=True)
+
+    if words < 60:
         raise ValueError(
-            f"Script too short: {word_count} words."
+            f"Script too short: {words} words."
         )
 
-    if word_count > 120:
+    if words > 120:
         raise ValueError(
-            f"Script too long: {word_count} words."
+            f"Script too long: {words} words."
         )
 
-    if len(title.strip()) < 5:
-        raise ValueError(
-            "Generated title is too short."
-        )
+    if len(title) < 5:
+        raise ValueError("Title is too short.")
 
     if "#USA" not in hashtags:
         hashtags += " #USA"
@@ -167,310 +132,212 @@ def validate(script, title, hashtags):
     return script, title, hashtags
 
 
-# ==========================================
-# GEMINI REQUEST
-# ==========================================
+def call_gemini():
+    headers = {
+        "Content-Type": "application/json"
+    }
 
-def request_model(model):
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": PROMPT
+                    }
+                ]
+            }
+        ]
+    }
+
+    print("Sending direct Gemini REST request...", flush=True)
+
+    response = requests.post(
+        API_URL,
+        params={
+            "key": API_KEY
+        },
+        headers=headers,
+        json=payload,
+        timeout=45
+    )
 
     print(
-        f"Trying model: {model}",
+        f"Gemini HTTP status: {response.status_code}",
         flush=True
     )
 
-    start_time = time.time()
-
-    response = client.models.generate_content(
-        model=model,
-        contents=PROMPT
-    )
-
-    elapsed = time.time() - start_time
-
-    print(
-        f"Response received from {model} "
-        f"in {elapsed:.1f} seconds.",
-        flush=True
-    )
-
-    if response is None:
-        raise ValueError(
-            f"{model} returned no response."
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Gemini API error {response.status_code}: "
+            f"{response.text[:1000]}"
         )
 
-    text = getattr(response, "text", None)
+    data = response.json()
 
-    if not text:
-        raise ValueError(
-            f"{model} returned empty text."
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        raise RuntimeError(
+            "Gemini returned an unexpected response: "
+            + str(data)[:1500]
+        )
+
+    if not text.strip():
+        raise RuntimeError(
+            "Gemini returned empty text."
         )
 
     return text
 
 
-# ==========================================
-# GENERATE WITH RETRIES + FALLBACK
-# ==========================================
-
 def generate():
-
     print("================================", flush=True)
-    print("USA DOSE SCRIPT GENERATOR", flush=True)
+    print("USA DOSE DIRECT GEMINI GENERATOR", flush=True)
     print("================================", flush=True)
 
     print(
-        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        flush=True
-    )
-
-    print(
-        "Starting Gemini generation...",
+        datetime.now().strftime(
+            "Time: %Y-%m-%d %H:%M:%S"
+        ),
         flush=True
     )
 
     last_error = None
 
-    # --------------------------------------
-    # MODEL LOOP
-    # --------------------------------------
-
-    for model_index, model in enumerate(MODELS):
+    for attempt in range(1, 4):
 
         print("", flush=True)
 
         print(
-            f"MODEL {model_index + 1}/{len(MODELS)}",
+            f"Gemini attempt {attempt}/3",
             flush=True
         )
 
-        # ----------------------------------
-        # RETRY EACH MODEL TWICE
-        # ----------------------------------
-
-        for attempt in range(1, 3):
+        try:
+            raw = call_gemini()
 
             print(
-                f"Attempt {attempt}/2",
+                "Gemini response received.",
                 flush=True
             )
 
-            try:
+            script, title, hashtags = parse_response(raw)
 
-                raw_text = request_model(model)
+            return validate(
+                script,
+                title,
+                hashtags
+            )
 
-                print(
-                    "Parsing Gemini response...",
-                    flush=True
-                )
+        except Exception as error:
 
-                script, title, hashtags = parse_response(
-                    raw_text
-                )
-
-                script, title, hashtags = validate(
-                    script,
-                    title,
-                    hashtags
-                )
-
-                print(
-                    f"SUCCESS: {model}",
-                    flush=True
-                )
-
-                return script, title, hashtags
-
-            except Exception as error:
-
-                last_error = error
-
-                error_text = str(error)
-
-                print(
-                    f"ERROR from {model}:",
-                    flush=True
-                )
-
-                print(
-                    error_text,
-                    flush=True
-                )
-
-                # ----------------------------------
-                # WAIT BEFORE RETRY
-                # ----------------------------------
-
-                if attempt < 2:
-
-                    delay = 8
-
-                    print(
-                        f"Waiting {delay} seconds before retry...",
-                        flush=True
-                    )
-
-                    time.sleep(delay)
-
-        # --------------------------------------
-        # MOVE TO FALLBACK MODEL
-        # --------------------------------------
-
-        if model_index < len(MODELS) - 1:
-
-            print("", flush=True)
+            last_error = error
 
             print(
-                f"{model} failed.",
+                f"Attempt {attempt} failed:",
                 flush=True
             )
 
             print(
-                "Moving to fallback model...",
+                repr(error),
                 flush=True
             )
 
-    # ======================================
-    # EVERYTHING FAILED
-    # ======================================
+            if attempt < 3:
+
+                wait = attempt * 8
+
+                print(
+                    f"Waiting {wait} seconds...",
+                    flush=True
+                )
+
+                time.sleep(wait)
 
     raise RuntimeError(
-        "All Gemini models failed. "
-        f"Last error: {last_error}"
+        "Gemini generation failed after 3 attempts: "
+        + repr(last_error)
     )
 
 
-# ==========================================
-# SAVE FILES
-# ==========================================
-
-def save(script, title, hashtags):
+def save_files(script, title, hashtags):
 
     with open(
         SCRIPT_FILE,
         "w",
         encoding="utf-8"
-    ) as file:
-
-        file.write(script)
+    ) as f:
+        f.write(script)
 
     with open(
         TITLE_FILE,
         "w",
         encoding="utf-8"
-    ) as file:
-
-        file.write(title)
+    ) as f:
+        f.write(title)
 
     with open(
         HASHTAGS_FILE,
         "w",
         encoding="utf-8"
-    ) as file:
-
-        file.write(hashtags)
+    ) as f:
+        f.write(hashtags)
 
     print("", flush=True)
 
-    print(
-        "Generated files saved:",
-        flush=True
-    )
+    print("Files saved successfully:", flush=True)
+    print(f"OK {SCRIPT_FILE}", flush=True)
+    print(f"OK {TITLE_FILE}", flush=True)
+    print(f"OK {HASHTAGS_FILE}", flush=True)
 
-    print(
-        f"OK: {SCRIPT_FILE}",
-        flush=True
-    )
-
-    print(
-        f"OK: {TITLE_FILE}",
-        flush=True
-    )
-
-    print(
-        f"OK: {HASHTAGS_FILE}",
-        flush=True
-    )
-
-
-# ==========================================
-# MAIN
-# ==========================================
 
 def main():
 
-    total_start = time.time()
+    start = time.time()
 
     try:
 
         script, title, hashtags = generate()
 
-        save(
+        save_files(
             script,
             title,
             hashtags
         )
 
-        total_time = time.time() - total_start
+        elapsed = time.time() - start
 
         print("", flush=True)
+        print("================================", flush=True)
+        print("SCRIPT GENERATION SUCCESS", flush=True)
+        print("================================", flush=True)
 
         print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            "SCRIPT GENERATION SUCCESS",
-            flush=True
-        )
-
-        print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            f"Total generation time: "
-            f"{total_time:.1f} seconds",
+            f"Generation time: {elapsed:.1f} seconds",
             flush=True
         )
 
         print("", flush=True)
-
         print("TITLE:", flush=True)
         print(title, flush=True)
 
         print("", flush=True)
-
         print("SCRIPT:", flush=True)
         print(script, flush=True)
 
         print("", flush=True)
-
         print("HASHTAGS:", flush=True)
         print(hashtags, flush=True)
 
     except Exception as error:
 
         print("", flush=True)
+        print("================================", flush=True)
+        print("SCRIPT GENERATION FAILED", flush=True)
+        print("================================", flush=True)
 
         print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            "SCRIPT GENERATION FAILED",
-            flush=True
-        )
-
-        print(
-            "================================",
-            flush=True
-        )
-
-        print(
-            str(error),
+            repr(error),
             flush=True
         )
 
