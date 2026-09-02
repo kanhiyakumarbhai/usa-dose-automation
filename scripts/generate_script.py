@@ -1,11 +1,15 @@
 import os
 import re
 import sys
+import time
 from datetime import datetime
+
 from google import genai
+from google.genai import types
+
 
 # ============================================================
-# USA DOSE - UNIVERSAL SHORTS SCRIPT GENERATOR
+# CONFIG
 # ============================================================
 
 API_KEY = os.getenv("GEMINI_API_KEY")
@@ -24,303 +28,26 @@ HASHTAGS_FILE = "video_hashtags.txt"
 
 
 # ============================================================
-# PROMPT
+# FAST PROMPT
 # ============================================================
 
-PROMPT = r"""
-You are the senior content writer for a high-retention YouTube Shorts
-channel called "USA Dose".
-
-Your job is to create ONE completely original, factual, highly engaging
-YouTube Short for a broad adult American audience roughly ages 18-70.
-
-The video must feel like a human storyteller discovered something
-interesting and is telling the viewer about it.
-
-============================================================
-CONTENT GOAL
-============================================================
-
-Create a topic that can attract viewers through curiosity.
-
-Good topic categories include:
-
-- strange places in America
-- unusual American history
-- mysterious events
-- forgotten disasters
-- abandoned places
-- strange inventions
-- surprising American businesses
-- unusual laws or rules
-- strange towns
-- hidden locations
-- incredible survival stories
-- unusual people or events
-- technology that changed America
-- money/business stories
-- engineering achievements
-- things Americans commonly see but don't know the story behind
-- little-known historical facts
-- unexpected reasons behind familiar American things
-
-Do NOT make every video about the same type of topic.
-
-Rotate subjects naturally.
-
-============================================================
-FACTUAL ACCURACY
-============================================================
-
-This is extremely important.
-
-Never invent:
-
-- statistics
-- quotes
-- dates
-- names
-- locations
-- scientific claims
-- historical events
-- laws
-- deaths
-- population numbers
-- government information
-
-If a detail is uncertain, leave it out.
-
-Prefer well-established factual information.
-
-Do not make a false statement just to make the story more exciting.
-
-============================================================
-HOOK
-============================================================
-
-The FIRST sentence must immediately create curiosity.
-
-Do NOT begin with:
-
-"Today we're going to..."
-"Did you know..."
-"Welcome back..."
-"Here's an interesting fact..."
-"In this video..."
-"Have you ever wondered..."
-
-Instead begin with a strong curiosity-driven statement or question.
-
-Examples of the STYLE:
-
-"There's a town in America that almost disappeared overnight."
-
-"One of the strangest buildings in America was never meant to be used
-the way you think."
-
-"Thousands of people drive past this place without knowing what happened
-there."
-
-"America once built something so strange that people still talk about it."
-
-Do not copy these examples.
-
-Create a new hook for the chosen story.
-
-============================================================
-STORY STRUCTURE
-============================================================
-
-Use this structure:
-
-1. HOOK
-   Immediately create curiosity.
-
-2. SETUP
-   Give only enough information to make the viewer understand the story.
-
-3. ESCALATION
-   Introduce increasingly surprising details.
-
-4. TWIST
-   Somewhere around the middle, reveal a detail that changes how the
-   viewer understands the story.
-
-5. REVEAL
-   Give the satisfying explanation or important fact.
-
-6. FINAL CURIOSITY
-   End with one memorable detail or thought.
-
-7. NATURAL ENGAGEMENT
-   Ask a simple question that encourages comments.
-
-The viewer should feel:
-
-"I need to know what happens next."
-
-============================================================
-RETENTION RULES
-============================================================
-
-Never reveal the entire answer in the first few seconds.
-
-Keep information moving.
-
-Every 2-4 seconds of narration should introduce either:
-
-- a new fact
-- a new question
-- a visual opportunity
-- a surprising detail
-- a change in direction
-- a consequence
-- a piece of the mystery
-
-Avoid long explanations.
-
-Avoid filler.
-
-Avoid repeating the same fact.
-
-Avoid unnecessary adjectives.
-
-Do not make the story sound like a school textbook.
-
-============================================================
-LANGUAGE
-============================================================
-
-Use simple, natural American English.
-
-Short sentences.
-
-Natural spoken language.
-
-No complicated academic vocabulary unless absolutely necessary.
-
-Write for listening, not reading.
-
-The narration must sound natural when spoken by a female AI voice.
-
-Do not use emojis.
-
-Do not use stage directions.
-
-Do not use:
-
-[dramatic pause]
-[show image]
-[music]
-(camera zooms)
-
-Only write the words that should be spoken.
-
-============================================================
-LENGTH
-============================================================
-
-Target approximately 75-105 words.
-
-The final spoken script should normally fit a YouTube Short of roughly
-30-45 seconds depending on narration speed.
-
-Do not make it unnecessarily long.
-
-============================================================
-ORIGINALITY
-============================================================
-
-Every video must feel different.
-
-Do not repeatedly use:
-
-"The reason is..."
-"But here's the crazy part..."
-"Believe it or not..."
-"You won't believe..."
-"Here's the twist..."
-
-These phrases may occasionally appear naturally, but do not make them
-a template.
-
-Vary sentence structure and storytelling style.
-
-============================================================
-VISUAL THINKING
-============================================================
-
-Write stories that naturally allow stock footage or photographs.
-
-Prefer stories where visuals can change frequently.
-
-Examples:
-
-- locations
-- buildings
-- roads
-- cities
-- maps
-- old photographs
-- machines
-- people
-- landscapes
-- signs
-- documents
-- historical scenes
-
-Do NOT write visual instructions inside the script.
-
-============================================================
-ENDING
-============================================================
-
-The final line should encourage a natural comment.
-
-Examples of the TYPE of ending:
-
-"Would you have gone inside?"
-
-"Would you still visit this place?"
-
-"Would you have believed the story?"
-
-"What would you have done?"
-
-Do not use the exact examples repeatedly.
-
-============================================================
-TITLE
-============================================================
-
-After the script, create ONE curiosity-driven YouTube Shorts title.
-
-The title should:
-
-- be short
-- create curiosity
-- accurately represent the story
-- avoid fake clickbait
-- avoid excessive punctuation
-
-Do not put hashtags in the title.
-
-============================================================
-HASHTAGS
-============================================================
-
-Create 5-8 relevant hashtags.
-
-Always include:
-
-#USA
-#Shorts
-
-The remaining hashtags must relate to the actual story.
-
-============================================================
-OUTPUT FORMAT
-============================================================
+PROMPT = """
+You are the script writer for a YouTube Shorts channel called USA Dose.
+
+Create ONE original, factual and interesting USA-related Short for a broad adult audience ages 18-70.
+
+Requirements:
+- 75-105 words for the spoken script.
+- Start with a strong curiosity hook.
+- Build suspense.
+- Do not reveal the main answer immediately.
+- Use simple natural English.
+- Fast, engaging storytelling.
+- Focus on one surprising USA fact, mystery, place, event, invention, law, history fact, money fact, or unusual discovery.
+- Avoid politics unless absolutely necessary.
+- Avoid fake facts and exaggerated claims.
+- Do not use emojis in the spoken script.
+- End naturally with a short question that encourages comments.
 
 Return EXACTLY this format:
 
@@ -328,37 +55,32 @@ SCRIPT:
 [spoken narration]
 
 TITLE:
-[title]
+[a short curiosity-based title]
 
 HASHTAGS:
-[hashtags separated by spaces]
-
-Do not add anything else.
+#USA #America #Facts #Shorts
 """
 
 
 # ============================================================
-# CLEAN RESPONSE
+# CLEAN TEXT
 # ============================================================
 
 def clean_text(text):
     text = text.strip()
 
-    # Remove markdown code fences
-    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-
-    # Remove accidental leading/trailing quotes
-    text = text.strip().strip('"').strip("'")
+    # Remove accidental markdown code fences
+    text = re.sub(r"```(?:text|txt)?", "", text, flags=re.IGNORECASE)
+    text = text.replace("```", "")
 
     return text.strip()
 
 
 # ============================================================
-# PARSE AI RESPONSE
+# PARSE GEMINI RESPONSE
 # ============================================================
 
 def parse_response(text):
-
     text = clean_text(text)
 
     script_match = re.search(
@@ -380,13 +102,13 @@ def parse_response(text):
     )
 
     if not script_match:
-        raise ValueError("Could not find SCRIPT section.")
+        raise ValueError("SCRIPT section missing.")
 
     if not title_match:
-        raise ValueError("Could not find TITLE section.")
+        raise ValueError("TITLE section missing.")
 
     if not hashtags_match:
-        raise ValueError("Could not find HASHTAGS section.")
+        raise ValueError("HASHTAGS section missing.")
 
     script = clean_text(script_match.group(1))
     title = clean_text(title_match.group(1))
@@ -396,20 +118,24 @@ def parse_response(text):
 
 
 # ============================================================
-# VALIDATION
+# VALIDATE
 # ============================================================
 
-def validate_script(script, title, hashtags):
+def validate_content(script, title, hashtags):
 
     words = len(script.split())
 
     print(f"Generated script words: {words}")
 
-    if words < 55:
-        print("WARNING: Script is shorter than expected.")
+    if words < 60:
+        raise ValueError(
+            f"Script too short: {words} words."
+        )
 
-    if words > 125:
-        print("WARNING: Script is longer than expected.")
+    if words > 120:
+        raise ValueError(
+            f"Script too long: {words} words."
+        )
 
     if len(title) < 5:
         raise ValueError("Generated title is too short.")
@@ -424,65 +150,58 @@ def validate_script(script, title, hashtags):
 
 
 # ============================================================
-# GENERATE
+# GEMINI GENERATION
 # ============================================================
 
 def generate_content():
 
-    print("========================================")
-    print("USA DOSE SMART SCRIPT GENERATOR")
-    print("========================================")
+    print("================================")
+    print("USA DOSE FAST SCRIPT GENERATOR")
+    print("================================")
     print(f"Model: {MODEL}")
     print(f"Date: {datetime.now().strftime('%Y-%m-%d')}")
-    print("Generating original factual Short...")
+    print("Generating daily script...")
     print()
 
     last_error = None
 
-    # Try Gemini up to 3 times
-    for attempt in range(1, 4):
+    # Only 2 attempts.
+    # This prevents the workflow from getting stuck
+    # in endless retries.
+    for attempt in range(1, 3):
+
+        print(f"Attempt {attempt}/2...")
 
         try:
 
-            print("----------------------------------------")
-            print(f"Gemini attempt {attempt}/3")
-            print("----------------------------------------")
-
             response = client.models.generate_content(
                 model=MODEL,
-                contents=PROMPT
+                contents=PROMPT,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=350,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level="low"
+                    )
+                )
             )
 
-            # Check for empty response
-            if not response or not response.text:
-                raise ValueError(
-                    "Gemini returned an empty response."
-                )
+            if not response:
+                raise ValueError("Empty Gemini response.")
 
-            raw_text = response.text.strip()
+            raw_text = getattr(response, "text", None)
 
             if not raw_text:
-                raise ValueError(
-                    "Gemini returned empty text."
-                )
+                raise ValueError("Gemini returned empty text.")
 
             print("Gemini response received.")
-            print()
 
-            # Parse response
-            script, title, hashtags = parse_response(
-                raw_text
-            )
+            script, title, hashtags = parse_response(raw_text)
 
-            # Validate generated content
-            script, title, hashtags = validate_script(
+            script, title, hashtags = validate_content(
                 script,
                 title,
                 hashtags
             )
-
-            print("Gemini generation successful.")
-            print()
 
             return script, title, hashtags
 
@@ -490,29 +209,15 @@ def generate_content():
 
             last_error = e
 
-            print()
-            print("Gemini attempt failed.")
-            print(f"Error: {e}")
-            print()
+            print(f"Attempt {attempt} failed:")
+            print(str(e))
 
-            # Retry if attempts remain
-            if attempt < 3:
+            if attempt < 2:
+                print("Waiting 5 seconds before final retry...")
+                time.sleep(5)
 
-                import time
-
-                wait_time = attempt * 10
-
-                print(
-                    f"Retrying Gemini in "
-                    f"{wait_time} seconds..."
-                )
-
-                time.sleep(wait_time)
-
-    # All attempts failed
     raise RuntimeError(
-        "Gemini failed after 3 attempts. "
-        f"Last error: {last_error}"
+        f"Gemini generation failed after 2 attempts: {last_error}"
     )
 
 
@@ -532,22 +237,10 @@ def save_files(script, title, hashtags):
         f.write(hashtags)
 
     print()
-    print("========================================")
-    print("FILES CREATED SUCCESSFULLY")
-    print("========================================")
-    print(f"✓ {SCRIPT_FILE}")
-    print(f"✓ {TITLE_FILE}")
-    print(f"✓ {HASHTAGS_FILE}")
-    print()
-    print("TITLE:")
-    print(title)
-    print()
-    print("HASHTAGS:")
-    print(hashtags)
-    print()
-    print("SCRIPT:")
-    print(script)
-    print()
+    print("Files saved:")
+    print(f"- {SCRIPT_FILE}")
+    print(f"- {TITLE_FILE}")
+    print(f"- {HASHTAGS_FILE}")
 
 
 # ============================================================
@@ -555,6 +248,8 @@ def save_files(script, title, hashtags):
 # ============================================================
 
 def main():
+
+    start_time = time.time()
 
     try:
 
@@ -566,16 +261,30 @@ def main():
             hashtags
         )
 
-        print("USA Dose script generation completed successfully.")
+        elapsed = time.time() - start_time
+
+        print()
+        print("================================")
+        print("SCRIPT GENERATION SUCCESS")
+        print("================================")
+        print(f"Generation time: {elapsed:.1f} seconds")
+        print()
+        print("TITLE:")
+        print(title)
+        print()
+        print("SCRIPT:")
+        print(script)
+        print()
+        print("HASHTAGS:")
+        print(hashtags)
 
     except Exception as e:
 
         print()
-        print("========================================")
+        print("================================")
         print("SCRIPT GENERATION FAILED")
-        print("========================================")
+        print("================================")
         print(str(e))
-        print()
 
         sys.exit(1)
 
