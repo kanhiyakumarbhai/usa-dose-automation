@@ -268,10 +268,10 @@ def create_final_video(video, voice, script):
     filters = []
 
     # ======================================================
-    # USA DOSE BRANDING
+    # TOP CHANNEL BRANDING
     # ======================================================
 
-    # Main channel name
+    # USA DOSE
     filters.append(
         "drawtext="
         f"fontfile={font_bold}:"
@@ -285,7 +285,7 @@ def create_final_video(video, voice, script):
         "boxborderw=14"
     )
 
-    # Subscribe text directly below channel name
+    # SUBSCRIBE under USA DOSE
     filters.append(
         "drawtext="
         f"fontfile={font_bold}:"
@@ -318,6 +318,40 @@ def create_final_video(video, voice, script):
             "boxborderw=22:"
             "text_align=center"
         )
+
+    # ======================================================
+    # LAST 5 SECONDS CTA
+    # ======================================================
+
+    # DOUBLE TAP TO LIKE
+    filters.append(
+        "drawtext="
+        f"fontfile={font_bold}:"
+        "text='DOUBLE TAP TO LIKE':"
+        "fontcolor=white:"
+        "fontsize=46:"
+        "x=(w-text_w)/2:"
+        "y=h-300:"
+        "box=1:"
+        "boxcolor=black@0.72:"
+        "boxborderw=18:"
+        f"enable='gte(t,{max(0, duration - 5):.3f})'"
+    )
+
+    # SUBSCRIBE
+    filters.append(
+        "drawtext="
+        f"fontfile={font_bold}:"
+        "text='SUBSCRIBE':"
+        "fontcolor=white:"
+        "fontsize=40:"
+        "x=(w-text_w)/2:"
+        "y=h-215:"
+        "box=1:"
+        "boxcolor=black@0.72:"
+        "boxborderw=14:"
+        f"enable='gte(t,{max(0, duration - 5):.3f})'"
+    )
 
     filter_complex = (
         "[0:v]"
@@ -468,7 +502,7 @@ def main():
 
     print("")
     print("================================")
-    print("ADDING VOICE + BRANDING + CAPTIONS")
+    print("ADDING VOICE + BRANDING + CTA")
     print("================================")
 
     create_final_video(
@@ -515,6 +549,9 @@ def main():
     )
     print(
         "Branding: USA DOSE + SUBSCRIBE"
+    )
+    print(
+        "Last 5 Seconds CTA: DOUBLE TAP TO LIKE + SUBSCRIBE"
     )
     print(
         "Production labels: NONE"
