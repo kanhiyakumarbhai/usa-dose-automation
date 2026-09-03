@@ -3,7 +3,7 @@ name: USA Dose Daily Automation
 on:
   workflow_dispatch:
 
-  schedule:
+ schedule:
   - cron: "0 12 * * *"     # 5:30 PM IST
   - cron: "30 23 * * *"    # 5:00 AM IST
 permissions:
