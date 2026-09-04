@@ -17,17 +17,41 @@ if not API_KEY:
     sys.exit(1)
 
 
-MODEL = "gemini-3.5-flash-lite"
+# Primary Gemini model
+MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-3.5-flash-lite"
+)
 
-API_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + MODEL
-    + ":generateContent"
+# Optional fallback model.
+# Leave empty if you don't want to use one.
+FALLBACK_MODEL = os.getenv(
+    "GEMINI_FALLBACK_MODEL",
+    ""
 )
 
 SCRIPT_FILE = "daily_script.txt"
 TITLE_FILE = "video_title.txt"
 HASHTAGS_FILE = "video_hashtags.txt"
+
+
+# ============================================================
+# RETRY CONFIGURATION
+# ============================================================
+
+MAX_ATTEMPTS = 6
+
+# Retry these temporary/server errors
+RETRY_STATUS_CODES = {
+    429,  # Rate limit
+    500,  # Internal server error
+    502,  # Bad gateway
+    503,  # Service unavailable
+    504,  # Gateway timeout
+}
+
+# Connection timeout, read timeout
+REQUEST_TIMEOUT = (15, 40)
 
 
 # ============================================================
@@ -152,7 +176,6 @@ def validate(script, title, hashtags):
     print(f"Words: {words}", flush=True)
     print(f"Characters: {len(script)}", flush=True)
 
-    # Compatible with female voice generator.
     if words < 65:
         raise ValueError(
             f"Script is too short. Minimum words: 65. "
@@ -168,6 +191,7 @@ def validate(script, title, hashtags):
     if len(title) < 5:
         raise ValueError("Title is too short.")
 
+    # Normalize hashtags
     if "#USA" not in hashtags:
         hashtags += " #USA"
 
@@ -184,10 +208,23 @@ def validate(script, title, hashtags):
 
 
 # ============================================================
+# CREATE API URL
+# ============================================================
+
+def get_api_url(model):
+
+    return (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        + model
+        + ":generateContent"
+    )
+
+
+# ============================================================
 # CALL GEMINI
 # ============================================================
 
-def call_gemini():
+def call_gemini(model):
 
     headers = {
         "Content-Type": "application/json"
@@ -209,23 +246,42 @@ def call_gemini():
         }
     }
 
+    api_url = get_api_url(model)
+
     print(
-        f"Sending request to {MODEL}...",
+        f"Sending request to {model}...",
         flush=True
     )
 
     response = requests.post(
-        API_URL,
+        api_url,
         params={"key": API_KEY},
         headers=headers,
         json=payload,
-        timeout=(10, 25)
+        timeout=REQUEST_TIMEOUT
     )
 
     print(
         f"Gemini HTTP status: {response.status_code}",
         flush=True
     )
+
+    # --------------------------------------------------------
+    # TEMPORARY SERVER / RATE LIMIT ERRORS
+    # --------------------------------------------------------
+
+    if response.status_code in RETRY_STATUS_CODES:
+
+        error_text = response.text[:1500]
+
+        raise RuntimeError(
+            f"RETRYABLE Gemini API error "
+            f"{response.status_code}: {error_text}"
+        )
+
+    # --------------------------------------------------------
+    # PERMANENT API ERROR
+    # --------------------------------------------------------
 
     if response.status_code != 200:
 
@@ -236,13 +292,39 @@ def call_gemini():
             f"{error_text}"
         )
 
-    data = response.json()
+    # --------------------------------------------------------
+    # PARSE JSON
+    # --------------------------------------------------------
 
     try:
 
+        data = response.json()
+
+    except ValueError:
+
+        raise RuntimeError(
+            "Gemini returned invalid JSON: "
+            + response.text[:1500]
+        )
+
+    # --------------------------------------------------------
+    # EXTRACT TEXT
+    # --------------------------------------------------------
+
+    try:
+
+        candidates = data["candidates"]
+
+        if not candidates:
+            raise RuntimeError(
+                "Gemini returned no candidates."
+            )
+
         text = (
-            data["candidates"][0]
-            ["content"]["parts"][0]["text"]
+            candidates[0]
+            ["content"]
+            ["parts"][0]
+            ["text"]
         )
 
     except (
@@ -256,7 +338,7 @@ def call_gemini():
             + str(data)[:1500]
         )
 
-    if not text.strip():
+    if not text or not text.strip():
 
         raise RuntimeError(
             "Gemini returned empty text."
@@ -266,36 +348,49 @@ def call_gemini():
 
 
 # ============================================================
-# GENERATE
+# RETRY WAIT TIME
 # ============================================================
 
-def generate():
+def get_wait_time(attempt):
 
-    print("================================", flush=True)
-    print("USA DOSE FAST GEMINI GENERATOR", flush=True)
-    print("================================", flush=True)
+    # 5, 10, 20, 30, 45 seconds
+    waits = [
+        5,
+        10,
+        20,
+        30,
+        45
+    ]
 
-    print(
-        datetime.now().strftime(
-            "Time: %Y-%m-%d %H:%M:%S"
-        ),
-        flush=True
+    index = min(
+        attempt - 1,
+        len(waits) - 1
     )
+
+    return waits[index]
+
+
+# ============================================================
+# GENERATE WITH MODEL
+# ============================================================
+
+def generate_with_model(model):
 
     last_error = None
 
-    for attempt in range(1, 4):
+    for attempt in range(1, MAX_ATTEMPTS + 1):
 
         print("", flush=True)
 
         print(
-            f"Gemini attempt {attempt}/3",
+            f"{model} attempt "
+            f"{attempt}/{MAX_ATTEMPTS}",
             flush=True
         )
 
         try:
 
-            raw = call_gemini()
+            raw = call_gemini(model)
 
             print(
                 "Gemini response received.",
@@ -310,12 +405,12 @@ def generate():
                 hashtags
             )
 
-        except Exception as error:
+        except requests.exceptions.Timeout as error:
 
             last_error = error
 
             print(
-                f"Attempt {attempt} failed:",
+                "Request timed out.",
                 flush=True
             )
 
@@ -324,21 +419,181 @@ def generate():
                 flush=True
             )
 
-            if attempt < 3:
+        except requests.exceptions.ConnectionError as error:
 
-                wait = 3
+            last_error = error
 
-                print(
-                    f"Waiting {wait} seconds...",
-                    flush=True
-                )
+            print(
+                "Connection error.",
+                flush=True
+            )
 
-                time.sleep(wait)
+            print(
+                repr(error),
+                flush=True
+            )
+
+        except RuntimeError as error:
+
+            last_error = error
+
+            print(
+                "Attempt failed:",
+                flush=True
+            )
+
+            print(
+                repr(error),
+                flush=True
+            )
+
+            # Only retry temporary/server errors
+            if not any(
+                f" {code}:" in str(error)
+                for code in RETRY_STATUS_CODES
+            ):
+                raise
+
+        except Exception as error:
+
+            last_error = error
+
+            print(
+                "Attempt failed:",
+                flush=True
+            )
+
+            print(
+                repr(error),
+                flush=True
+            )
+
+            # Parsing / validation errors can be retried,
+            # because another generation may be valid.
+
+        if attempt < MAX_ATTEMPTS:
+
+            wait = get_wait_time(attempt)
+
+            print(
+                f"Waiting {wait} seconds before retry...",
+                flush=True
+            )
+
+            time.sleep(wait)
 
     raise RuntimeError(
-        "Gemini generation failed after 3 attempts: "
+        f"{model} generation failed after "
+        f"{MAX_ATTEMPTS} attempts: "
         + repr(last_error)
     )
+
+
+# ============================================================
+# GENERATE
+# ============================================================
+
+def generate():
+
+    print("================================", flush=True)
+    print("USA DOSE GEMINI GENERATOR", flush=True)
+    print("================================", flush=True)
+
+    print(
+        datetime.now().strftime(
+            "Time: %Y-%m-%d %H:%M:%S"
+        ),
+        flush=True
+    )
+
+    print(
+        f"Primary model: {MODEL}",
+        flush=True
+    )
+
+    if FALLBACK_MODEL:
+
+        print(
+            f"Fallback model: {FALLBACK_MODEL}",
+            flush=True
+        )
+
+    else:
+
+        print(
+            "Fallback model: disabled",
+            flush=True
+        )
+
+    # --------------------------------------------------------
+    # PRIMARY MODEL
+    # --------------------------------------------------------
+
+    try:
+
+        return generate_with_model(MODEL)
+
+    except Exception as primary_error:
+
+        print("", flush=True)
+
+        print(
+            "PRIMARY MODEL FAILED",
+            flush=True
+        )
+
+        print(
+            repr(primary_error),
+            flush=True
+        )
+
+        # ----------------------------------------------------
+        # FALLBACK MODEL
+        # ----------------------------------------------------
+
+        if FALLBACK_MODEL:
+
+            # Prevent accidentally using the same model twice
+            if FALLBACK_MODEL == MODEL:
+
+                raise RuntimeError(
+                    "Fallback model is identical to "
+                    "primary model. Configure a different "
+                    "GEMINI_FALLBACK_MODEL."
+                )
+
+            print("", flush=True)
+
+            print(
+                "================================",
+                flush=True
+            )
+
+            print(
+                "TRYING FALLBACK MODEL",
+                flush=True
+            )
+
+            print(
+                "================================",
+                flush=True
+            )
+
+            try:
+
+                return generate_with_model(
+                    FALLBACK_MODEL
+                )
+
+            except Exception as fallback_error:
+
+                raise RuntimeError(
+                    "Both Gemini models failed.\n"
+                    f"Primary: {repr(primary_error)}\n"
+                    f"Fallback: {repr(fallback_error)}"
+                )
+
+        raise
 
 
 # ============================================================
@@ -352,6 +607,7 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(script)
 
     with open(
@@ -359,6 +615,7 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(title)
 
     with open(
@@ -366,6 +623,7 @@ def save_files(script, title, hashtags):
         "w",
         encoding="utf-8"
     ) as f:
+
         f.write(hashtags)
 
     print("", flush=True)
