@@ -3,20 +3,19 @@ name: USA Dose Daily Automation
 on:
   workflow_dispatch:
 
- schedule:
-  - cron: "0 12 * * *"     # 5:30 PM IST
-  - cron: "30 23 * * *"    # 5:00 AM IST
+  schedule:
+    # 5:30 PM IST
+    - cron: "0 12 * * *"
+
+    # 5:00 AM IST
+    - cron: "30 23 * * *"
+
 permissions:
   contents: write
 
 jobs:
   daily:
     runs-on: ubuntu-latest
-
-    # ==================================================
-    # MAXIMUM WORKFLOW TIME
-    # ==================================================
-
     timeout-minutes: 30
 
     steps:
@@ -43,13 +42,15 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          echo "================================"
+          echo "INSTALLING SYSTEM DEPENDENCIES"
+          echo "================================"
+
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-          echo "================================"
+          echo ""
           echo "FFMPEG CHECK"
-          echo "================================"
-
           ffmpeg -version
           ffprobe -version
 
@@ -68,7 +69,7 @@ jobs:
           if [ ! -f requirements.txt ]; then
             echo "ERROR: requirements.txt not found!"
             echo "Repository files:"
-            find . -maxdepth 2 -type f | sort
+            find . -maxdepth 3 -type f | sort
             exit 1
           fi
 
@@ -89,12 +90,15 @@ jobs:
           python -c "import requests; print('requests: OK')"
           python -c "import moviepy; print('moviepy: OK')"
 
+          echo ""
           echo "Python:"
           python --version
 
+          echo ""
           echo "FFmpeg:"
           ffmpeg -version | head -1
 
+          echo ""
           echo "FFprobe:"
           ffprobe -version | head -1
 
@@ -149,25 +153,18 @@ jobs:
           echo "GENERATING DAILY SCRIPT"
           echo "================================"
 
-          python scripts/generate_script.py
-          
-          RESULT=$?
-
-          if [ "$RESULT" -eq 124 ]; then
+          if python scripts/generate_script.py; then
             echo ""
-            echo "ERROR: Gemini script generation timed out after 120 seconds."
-            echo "The workflow was stopped instead of waiting indefinitely."
-            exit 1
-          fi
+            echo "Daily script generation finished."
+          else
+            RESULT=$?
 
-          if [ "$RESULT" -ne 0 ]; then
             echo ""
             echo "ERROR: Script generation failed."
+            echo "Exit code: $RESULT"
+
             exit "$RESULT"
           fi
-
-          echo ""
-          echo "Daily script generation finished."
 
       # ==================================================
       # CHECK SCRIPT
@@ -201,7 +198,6 @@ jobs:
       - name: Generate female voice
         env:
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVEN_LABS_API_KEY: ${{ secrets.ELEVEN_LABS_API_KEY }}
         run: |
           echo "================================"
           echo "GENERATING FEMALE VOICE"
@@ -279,8 +275,6 @@ jobs:
           echo "CREATING USA DOSE HD VIDEO"
           echo "================================"
 
-          ffprobe -version
-
           python create_video.py
 
           if [ ! -f usa_dose_short.mp4 ]; then
@@ -300,7 +294,6 @@ jobs:
       # ==================================================
 
       - name: Upload video to YouTube
-        if: success()
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
@@ -311,6 +304,8 @@ jobs:
           echo "================================"
 
           python upload_video.py
+
+          echo "YouTube upload finished."
 
       # ==================================================
       # SAVE GENERATED FILES
@@ -329,18 +324,14 @@ jobs:
           for file in \
             daily_script.txt \
             video_title.txt \
-            video_hashtags.txt \
-            voice.mp3 \
-            usa_dose_short.mp4
+            video_hashtags.txt
           do
-
             if [ -f "$file" ]; then
               echo "Adding: $file"
               git add "$file"
             else
               echo "Not found: $file"
             fi
-
           done
 
           if git diff --cached --quiet; then
